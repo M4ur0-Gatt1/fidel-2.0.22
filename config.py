@@ -31,10 +31,20 @@ DEFAULT_CONFIG = {
     "active_provider": "deepseek",
     "theme": "dark",
     "font_size": 12,
+    # límites del agente — ajustables desde ⚙. La idea de Fidel es NO ponerle
+    # techos al trabajo salvo los que impone la API/costo. Subilos si querés
+    # que insista más en tareas grandes; el único freno duro es que deje de
+    # avanzar (repetir sin progreso) para no quemar tokens en un bucle.
+    "agent": {
+        "max_steps": 40,          # rondas de tool-calls por tramo antes de auto-continuar
+        "max_continuations": 25,  # veces que sigue solo tras llegar al tope de pasos
+        "memory_turns": 24,       # turnos de conversación que recuerda en la sesión
+    },
     "providers": {
         "deepseek": {"api_key": "", "model": "deepseek-chat", "base_url": ""},
         "nvidia": {"api_key": "", "model": "meta/llama-3.3-70b-instruct", "base_url": ""},
         "groq": {"api_key": "", "model": "llama-3.3-70b-versatile", "base_url": ""},
+        "siliconflow": {"api_key": "", "model": "deepseek-ai/DeepSeek-V3", "base_url": ""},
         "openai": {"api_key": "", "model": "gpt-4o", "base_url": ""},
         "anthropic": {"api_key": "", "model": "claude-sonnet-4-5", "base_url": ""},
         "custom": {"api_key": "", "model": "llama3", "base_url": "http://localhost:11434/v1"},

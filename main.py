@@ -34,7 +34,7 @@ CODE_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".md", ".txt", ".json",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.0.21"
+FIDEL_VERSION = "2.0.22"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -88,6 +88,14 @@ class Api:
     def cancel(s):
         """El usuario pidió detener la consulta en curso."""
         s._cancel = True
+
+    def _mem_limit(s):
+        """Cuántos mensajes de la conversación recordar (2 por turno).
+        Configurable desde ⚙ (config agent.memory_turns)."""
+        try:
+            return max(2, int(s.cfg.data.get("agent", {}).get("memory_turns", 24))) * 2
+        except (TypeError, ValueError):
+            return 48
 
     # ── infraestructura ───────────────────────────────────
     def _push(s, event, data):
@@ -174,6 +182,8 @@ class Api:
                        "desc": t["function"].get("description", "")}
                       for t in s._get_tools()],
             "routines": s.cfg.data.get("routines", []),
+            "agent": s.cfg.data.get("agent", {}),
+            "session_id": s.ses_id,
         }
         st.update(s._apis_state())
         return st
@@ -181,6 +191,26 @@ class Api:
     def save_system_prompt(s, text):
         s.cfg.data["system_prompt"] = (text or "").strip()
         s.cfg.save()
+
+    def save_agent_config(s, steps, conts, mem):
+        """Guarda los límites del agente (⚙). Fidel no le pone techo al trabajo
+        salvo el que elijas acá y el de la API."""
+        a = s.cfg.data.setdefault("agent", {})
+
+        def _int(v, d):
+            try:
+                return max(1, int(v))
+            except (TypeError, ValueError):
+                return d
+        a["max_steps"] = _int(steps, 40)
+        a["max_continuations"] = _int(conts, 25)
+        a["memory_turns"] = _int(mem, 24)
+        s.cfg.save()
+        return a
+
+    def current_session(s):
+        """Id de la conversación activa — el frontend lo usa para marcar la solapa."""
+        return {"id": s.ses_id}
 
     # ── rutinas: órdenes reutilizables que guarda el usuario ──
     def save_routine(s, name, prompt):
@@ -412,6 +442,7 @@ class Api:
         "groq": "openai/gpt-oss-120b",
         "nvidia": "meta/llama-3.3-70b-instruct",
         "deepseek": "deepseek-chat",
+        "siliconflow": "deepseek-ai/DeepSeek-V3",
         "openai": "gpt-4o-mini",
         "qwen": "qwen-plus",
         "glm": "glm-4-flash",
@@ -424,9 +455,9 @@ class Api:
         en Ollama local (custom) que no tiene límites de cupo → siempre responde."""
         provs = s.cfg.data.get("providers", {})
         active = s.cfg.get_active_provider()
-        # Prioridad: deepseek, nvidia, groq, openai, anthropic, qwen, glm, xai, custom
-        pref = ["deepseek", "nvidia", "groq", "openai", "anthropic",
-                "qwen", "glm", "xai", "custom"]
+        # Prioridad: deepseek, siliconflow, nvidia, groq, openai, anthropic, …, custom
+        pref = ["deepseek", "siliconflow", "nvidia", "groq", "openai",
+                "anthropic", "qwen", "glm", "xai", "custom"]
         rest = sorted((p for p in provs if p != active),
                       key=lambda p: pref.index(p) if p in pref else 99)
         chain = []
@@ -456,7 +487,7 @@ class Api:
     # ── agente ────────────────────────────────────────────
     def _get_tools(s):
         return [
-            {"type": "function", "function": {"name": "read_file", "description": "Lee archivo del workspace", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}, "required": ["path"]}}},
+            {"type": "function", "function": {"name": "read_file", "description": "Lee un archivo (ruta relativa al workspace O absoluta). Para archivos grandes leelo por partes con start_line y max_lines; si la salida avisa que hay mas, segui desde el start_line que indica.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "start_line": {"type": "integer", "description": "linea inicial, 1 = principio"}, "max_lines": {"type": "integer", "description": "cuantas lineas leer; 0 = hasta el final o el tope"}}, "required": ["path"]}}},
             {"type": "function", "function": {"name": "write_file", "description": "Escribe archivo COMPLETO (crea o reemplaza todo el contenido). Para archivos existentes grandes preferi edit_file.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "content": {"type": "string"}}, "required": ["path", "content"]}}},
             {"type": "function", "function": {"name": "edit_file", "description": "Reemplaza un fragmento exacto de un archivo existente por otro, sin reescribir el resto. old_text debe aparecer LITERAL y UNA SOLA VEZ en el archivo (copialo de un read_file previo, con la indentacion exacta). Preferi esto sobre write_file para archivos grandes.", "parameters": {"type": "object", "properties": {"path": {"type": "string"}, "old_text": {"type": "string"}, "new_text": {"type": "string"}}, "required": ["path", "old_text", "new_text"]}}},
             {"type": "function", "function": {"name": "exec_cmd", "description": "Ejecuta comando shell", "parameters": {"type": "object", "properties": {"command": {"type": "string"}}, "required": ["command"]}}},
@@ -468,9 +499,29 @@ class Api:
     def _exec_tool(s, name, args, code, lang):
         try:
             if name == "read_file":
-                p = s._base() / args["path"]
-                return p.read_text(encoding="utf-8", errors="replace")[:5000] \
-                    if p.exists() else "❌ No existe"
+                rel = args.get("path", "")
+                p = Path(rel) if os.path.isabs(rel) else s._base() / rel
+                if not p.exists():
+                    return "❌ No existe"
+                if p.is_dir():
+                    return "❌ Es un directorio — usá list_files"
+                try:
+                    txt = p.read_text(encoding="utf-8", errors="replace")
+                except OSError as e:
+                    return f"❌ {e}"
+                lines = txt.splitlines(keepends=True)
+                start = max(1, int(args.get("start_line", 1) or 1))
+                maxl = int(args.get("max_lines", 0) or 0)
+                end = (start - 1 + maxl) if maxl else len(lines)
+                seg = "".join(lines[start - 1:end])
+                cap = 20000
+                if len(seg) > cap:
+                    return seg[:cap] + (f"\n\n… (cortado en {cap} chars — pedí un rango "
+                                        "menor con start_line/max_lines)")
+                if end < len(lines):
+                    seg += (f"\n\n… ({len(lines)} líneas en total; mostradas {start}-{end}. "
+                            f"Seguí con start_line={end + 1})")
+                return seg or "(archivo vacío)"
             if name == "write_file":
                 p = s._base() / args["path"]
                 p.parent.mkdir(parents=True, exist_ok=True)
@@ -617,7 +668,7 @@ class Api:
                         f"  {f.relative_to(s.ws)}" for f in cf[:12]) + "\n"
             sp = (s.cfg.data.get("system_prompt") or "").strip() or DEFAULT_SP
             # memoria: incluir los últimos turnos para que el agente tenga contexto
-            ms = list(s._mem[-8:]) + [{"role": "user", "content": ctx + msg}]
+            ms = list(s._mem[-s._mem_limit():]) + [{"role": "user", "content": ctx + msg}]
             text = ""
             use_tools = True
             flubs = 0
@@ -627,15 +678,24 @@ class Api:
             stall = 0         # llamadas repetidas seguidas sin avance
             stalled_out = False
             hit_cap = False
+            tool_runs = 0     # herramientas realmente ejecutadas en el turno (progreso)
             # cadena de failover: si el modelo actual se cae/agota, saltar al siguiente
             chain = s._chain()   # [(proveedor, modelo), ...]
             ci = 0
             if chain:
                 s.prov = s._mk_provider(*chain[0])
-            # Límite dinámico basado en la longitud de la cadena de failover + reintentos por error
-            max_attempts = min(14, len(chain) * 3 + 4)
+            # Límites del agente: configurables desde ⚙ (config "agent"). La filosofía
+            # de Fidel es NO ponerle techo al trabajo — el único freno real es que el
+            # agente deje de AVANZAR (bucle) o el costo/límite de la API. max_steps =
+            # rondas de tools por tramo; max_continuations = cuántas veces sigue solo.
+            ag = s.cfg.data.get("agent", {})
+            cfg_steps = int(ag.get("max_steps", 40) or 40)
+            # el piso asegura suficientes intentos para agotar la cadena de failover
+            max_attempts = max(cfg_steps, len(chain) * 3 + 4)
             continuations = 0
-            MAX_AUTO_CONTINUATIONS = 3   # extensiones automaticas del limite de pasos
+            MAX_AUTO_CONTINUATIONS = int(ag.get("max_continuations", 25) or 25)
+            no_progress = 0            # tramos seguidos sin ningún avance → ahí sí paramos
+            last_progress = (0, 0)     # (archivos escritos, herramientas ejecutadas)
             while True:
                 hit_cap = False
                 for attempt in range(max_attempts):
@@ -745,6 +805,7 @@ class Api:
                         else:
                             res = s._exec_tool(fn, args, code, lang)
                             progressed = True
+                            tool_runs += 1
                         ms.append({"role": "tool", "tool_call_id": tc.get("id", ""),
                                    "content": res})
                         # Enviar detalles más específicos de la herramienta
@@ -764,9 +825,20 @@ class Api:
                 else:
                     # se agotaron los pasos de herramientas sin llegar a una respuesta final
                     hit_cap = True
-                if hit_cap and not stalled_out and continuations < MAX_AUTO_CONTINUATIONS:
+                # ¿hubo avance real en este tramo? (archivos nuevos o tools ejecutadas)
+                marker = (len(dict.fromkeys(s._written)), tool_runs)
+                if marker != last_progress:
+                    no_progress = 0
+                    last_progress = marker
+                else:
+                    no_progress += 1
+                # Seguimos solos mientras el agente PROGRESE: solo paramos si se traba
+                # (2 tramos sin ningún avance) o si tocamos el techo de seguridad
+                # configurable (evita quemar tokens en un bucle infinito).
+                if (hit_cap and not stalled_out and no_progress < 2
+                        and continuations < MAX_AUTO_CONTINUATIONS):
                     continuations += 1
-                    s._push("sys", f"↻ Alcancé el límite de pasos — sigo automáticamente con la tarea ({continuations}/{MAX_AUTO_CONTINUATIONS})…")
+                    s._push("sys", f"↻ Sigo trabajando en la tarea (tramo {continuations})…")
                     ms.append({"role": "user", "content":
                                "Segui trabajando en la tarea desde donde quedaste, sin repetir "
                                "lo que ya hiciste ni resumir. Si ya terminaste, decilo en una linea."})
@@ -789,9 +861,18 @@ class Api:
                          if n_esc else ".") +
                         " Probá pedir algo más chico y específico, o dividir la tarea en pasos.")
             elif not text and hit_cap:
-                text = (f"⚠ Seguí automáticamente {continuations} vez(es) y aun así no "
-                        "terminé la tarea — es probable que sea muy grande para resolverla "
-                        "de una. Pedime que siga desde donde quedó, o dividila en partes más chicas.")
+                n_esc = len(dict.fromkeys(s._written))
+                toque = f" (toqué {n_esc} archivo(s))" if n_esc else ""
+                if no_progress >= 2:
+                    text = ("⏸ Paré porque el agente dejó de avanzar (repetía sin progreso)"
+                            + toque + ". Escribí «segui» para reintentar, cambiá de modelo, "
+                            "o dividí un poco el pedido.")
+                else:
+                    text = ("↻ Vengo trabajando la tarea en varios tramos" + toque +
+                            f" y llegué al tope de {continuations} tramos automáticos "
+                            "(seguridad para no quemar tokens). La conversación recuerda el "
+                            "contexto: escribí «segui» y continúo desde donde quedé. Si es una "
+                            "tarea siempre grande, subí «tramos automáticos» en ⚙.")
             if not text:
                 try:
                     rc = (r.raw or {}).get("choices", [{}])[0] \
@@ -805,7 +886,7 @@ class Api:
             # guardar el turno en memoria (solo texto limpio, robusto entre modelos)
             s._mem.append({"role": "user", "content": msg})
             s._mem.append({"role": "assistant", "content": text})
-            s._mem = s._mem[-16:]
+            s._mem = s._mem[-s._mem_limit():]
             # aviso de undo si el turno escribió archivos
             if s._checkpoint:
                 n = len(s._checkpoint)
@@ -1005,16 +1086,21 @@ class Api:
             pass
         return []
 
-    def history(s):
+    def history(s, limit=20):
         out = []
         try:
-            for f in sorted(s.ses_dir.glob("*.json"), reverse=True)[:8]:
+            for f in sorted(s.ses_dir.glob("*.json"), reverse=True)[:limit]:
+                first, n = "(vacía)", 0
                 try:
                     msgs = json.loads(f.read_text(encoding="utf-8"))
-                    first = msgs[0]["content"][:80] if msgs else "(vacía)"
+                    n = len(msgs)
+                    # título = primer mensaje del usuario (los del sistema no describen)
+                    um = next((m.get("content", "") for m in msgs
+                               if m.get("role") == "user" and m.get("content")), "")
+                    first = (um or (msgs[0].get("content", "") if msgs else ""))[:80] or "(vacía)"
                 except Exception:
                     first = "(error)"
-                out.append({"id": f.stem, "first": first})
+                out.append({"id": f.stem, "first": first, "n": n})
         except Exception:
             pass
         return out
@@ -1027,14 +1113,19 @@ class Api:
             msgs = json.loads(f.read_text(encoding="utf-8"))
             s.ses_id = sid
             s.ses_msgs = msgs
-            # Reconstruir _mem para que el modelo tenga contexto de la conversación
+            # Reconstruir _mem para que el modelo tenga contexto de la conversación.
+            # OJO: el frontend guarda las respuestas del agente con rol "Fidel"
+            # (no "assistant") — hay que mapearlo o el modelo pierde su propio
+            # contexto al restaurar una conversación.
             s._mem = []
             for m in msgs:
                 role = m.get("role")
-                if role in ("user", "assistant"):
-                    s._mem.append({"role": role, "content": m.get("content", "")})
-            # Mantener solo los últimos 16 turnos para no saturar el contexto
-            s._mem = s._mem[-16:]
+                if role == "user":
+                    s._mem.append({"role": "user", "content": m.get("content", "")})
+                elif role in ("assistant", "Fidel"):
+                    s._mem.append({"role": "assistant", "content": m.get("content", "")})
+            # Mantener solo los últimos turnos para no saturar el contexto
+            s._mem = s._mem[-s._mem_limit():]
             return msgs
         except Exception as e:
             return {"error": str(e)}

@@ -19,6 +19,7 @@ const S = {
   theme: "dark", tabs: [], cur: null, untitled: 0,
   ws: null, providers: [], pending: null, plan: null, loading: false,
   expanded: new Set(), zoom: 1.0,
+  chats: [], chatId: null, agent: {},
 };
 const icoUse = name => `<svg class="ico"><use href="#${name}"/></svg>`;
 
@@ -132,6 +133,7 @@ async function init() {
   const st = await api.get_state();
   applyState(st);
   newTab();
+  loadChatTabs().catch(() => {});
   bind();
   sysMsg("Fidel v" + (S.version || "?") + " — listo.\n" +
          "⚙ API keys · 📁 proyecto · barra izquierda: 🧊 Artefactos (vista previa en vivo), " +
@@ -189,6 +191,8 @@ function applyState(st) {
   S.defaultSp = st.default_sp || "";
   S.agentTools = st.tools || [];
   S.routines = st.routines || [];
+  S.agent = st.agent || {};
+  if (st.session_id) S.chatId = st.session_id;
   S.version = st.version || "";
   if (st.version) $("#ver").textContent = "Fidel v" + st.version;
   applyZoom(st.zoom || 1.0, true);
@@ -630,6 +634,7 @@ async function send() {
     setStatus("Error");
   } finally {
     setBusy(false);
+    loadChatTabs().catch(() => {});
   }
 }
 
@@ -679,6 +684,7 @@ async function history_() {
 async function resume(sid) {
   const msgs = await api.resume(sid);
   if (msgs.error) return sysMsg("❌ " + msgs.error);
+  S.chatId = sid;
   $("#msgs").innerHTML = "";
   for (const m of msgs) {
     if (m.role === "user") userMsg(m.content);
@@ -686,12 +692,48 @@ async function resume(sid) {
     else sysMsg(m.content);
   }
   sysMsg(`📂 Restaurada (${msgs.length} msgs)`);
+  renderChatTabs();
 }
 
-function newChat() {
-  api.new_session();
+async function newChat() {
+  const id = await api.new_session();
+  if (id) S.chatId = id;
   $("#msgs").innerHTML = "";
   sysMsg("Nueva conversación");
+  await loadChatTabs();
+}
+
+/* ── solapas de conversaciones: navegar entre chats como pestañas ── */
+async function loadChatTabs() {
+  try { S.chats = await api.history(); } catch (e) { S.chats = []; }
+  renderChatTabs();
+}
+
+function renderChatTabs() {
+  const bar = $("#chatTabs");
+  if (!bar) return;
+  // asegurar que la conversación activa aparezca aunque todavía no esté guardada
+  const items = (S.chats || []).slice();
+  if (S.chatId && !items.some(c => c.id === S.chatId))
+    items.unshift({ id: S.chatId, first: "Nueva conversación", n: 0 });
+  bar.innerHTML = "";
+  for (const c of items) {
+    const el = document.createElement("div");
+    el.className = "ctab" + (c.id === S.chatId ? " active" : "");
+    const label = (c.first && c.first !== "(vacía)") ? c.first : "Nueva conversación";
+    el.title = label + (c.n ? `  ·  ${c.n} msgs` : "");
+    const t = document.createElement("span");
+    t.className = "ctab-t";
+    t.textContent = label.length > 24 ? label.slice(0, 24) + "…" : label;
+    el.appendChild(t);
+    el.onclick = () => switchChat(c.id);
+    bar.appendChild(el);
+  }
+}
+
+async function switchChat(id) {
+  if (!id || id === S.chatId) return;
+  await resume(id);
 }
 
 /* ── tabla de posiciones histórica de los desafíos ── */
@@ -838,6 +880,16 @@ function modalKeys() {
     <div class="sub">El system prompt completo que recibe el modelo — Fidel no
     agrega nada más, ni filtros ni instrucciones ocultas. Vacío = usar el de fábrica.</div>
     <textarea id="sysP" class="cmp-field" rows="4" spellcheck="false"></textarea>
+    <h2 style="margin-top:16px">Límites del agente</h2>
+    <div class="sub">Fidel no le pone techo al trabajo salvo lo que elijas acá (y el
+    de la API). Subilos para tareas grandes; el único freno duro es que el agente
+    deje de avanzar.</div>
+    <div class="agrow"><label>Pasos por tramo</label>
+      <input id="agSteps" type="number" min="1" spellcheck="false"></div>
+    <div class="agrow"><label>Tramos automáticos</label>
+      <input id="agConts" type="number" min="1" spellcheck="false"></div>
+    <div class="agrow"><label>Turnos que recuerda</label>
+      <input id="agMem" type="number" min="1" spellcheck="false"></div>
     <div class="m-actions">
       <button class="ghost" id="mCancel">Cancelar</button>
       <button class="primary" id="mSave">Guardar</button>
@@ -845,12 +897,16 @@ function modalKeys() {
   api.config_path().then(p => { $("#cfgPath").textContent = "Se guardan en " + p; });
   $("#sysP").value = S.sysPrompt || "";
   $("#sysP").placeholder = S.defaultSp || "";
+  $("#agSteps").value = S.agent.max_steps ?? 40;
+  $("#agConts").value = S.agent.max_continuations ?? 25;
+  $("#agMem").value = S.agent.memory_turns ?? 24;
   $("#mCancel").onclick = closeModal;
   $("#mSave").onclick = async () => {
     const keys = {};
     document.querySelectorAll('#modal input[type="password"]').forEach(i => { keys[i.dataset.p] = i.value.trim(); });
     S.sysPrompt = $("#sysP").value.trim();
     await api.save_system_prompt(S.sysPrompt);
+    S.agent = await api.save_agent_config($("#agSteps").value, $("#agConts").value, $("#agMem").value);
     const st = await api.save_keys(keys);
     S.providers = st.providers;
     updApis(st);
