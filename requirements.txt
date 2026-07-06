@@ -1,0 +1,4 @@
+requests>=2.31
+pywebview>=5.0
+# Linux necesita además un backend web: pip install "pywebview[qt]"
+# Para compilar: pip install pyinstaller  (y pillow si regenerás el ícono)

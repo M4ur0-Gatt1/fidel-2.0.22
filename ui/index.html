@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<title>Fidel</title>
+<link rel="stylesheet" href="vendor/codemirror.min.css">
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<!-- Íconos de línea (estilo Feather/Font Awesome), monocromos, heredan color -->
+<svg style="display:none" xmlns="http://www.w3.org/2000/svg">
+  <symbol id="i-sun" viewBox="0 0 24 24"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></symbol>
+  <symbol id="i-moon" viewBox="0 0 24 24"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 24 24"><path d="M22 19a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h5l2 3h9a2 2 0 0 1 2 2z"/></symbol>
+  <symbol id="i-file" viewBox="0 0 24 24"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/></symbol>
+  <symbol id="i-save" viewBox="0 0 24 24"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"/><polyline points="17 21 17 13 7 13 7 21"/><polyline points="7 3 7 8 15 8"/></symbol>
+  <symbol id="i-search" viewBox="0 0 24 24"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></symbol>
+  <symbol id="i-files" viewBox="0 0 24 24"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></symbol>
+  <symbol id="i-git" viewBox="0 0 24 24"><line x1="6" y1="3" x2="6" y2="15"/><circle cx="18" cy="6" r="3"/><circle cx="6" cy="18" r="3"/><path d="M18 9a9 9 0 0 1-9 9"/></symbol>
+  <symbol id="i-star" viewBox="0 0 24 24"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26"/></symbol>
+  <symbol id="i-compare" viewBox="0 0 24 24"><line x1="18" y1="20" x2="18" y2="10"/><line x1="12" y1="20" x2="12" y2="4"/><line x1="6" y1="20" x2="6" y2="14"/></symbol>
+  <symbol id="i-history" viewBox="0 0 24 24"><polyline points="1 4 1 10 7 10"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 24 24"><line x1="12" y1="5" x2="12" y2="19"/><line x1="5" y1="12" x2="19" y2="12"/></symbol>
+  <symbol id="i-arrow" viewBox="0 0 24 24"><line x1="5" y1="12" x2="19" y2="12"/><polyline points="12 5 19 12 12 19"/></symbol>
+  <symbol id="i-play" viewBox="0 0 24 24"><polygon points="6 3 20 12 6 21 6 3"/></symbol>
+  <symbol id="i-chev-d" viewBox="0 0 24 24"><polyline points="6 9 12 15 18 9"/></symbol>
+  <symbol id="i-chev-r" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></symbol>
+  <symbol id="i-tool" viewBox="0 0 24 24"><path d="M14.7 6.3a4 4 0 0 0-5.6 5.6L3 18v3h3l6.1-6.1a4 4 0 0 0 5.6-5.6l-2.5 2.5-2-2 2.5-2.5z"/></symbol>
+  <symbol id="i-templates" viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7"/><rect x="14" y="3" width="7" height="7"/><rect x="3" y="14" width="7" height="7"/><rect x="14" y="14" width="7" height="7"/></symbol>
+  <symbol id="i-stop" viewBox="0 0 24 24"><rect x="5" y="5" width="14" height="14" rx="2"/></symbol>
+  <symbol id="i-artifact" viewBox="0 0 24 24"><path d="M12 2l9 5v10l-9 5-9-5V7z"/><path d="M12 22V12"/><path d="M21 7l-9 5-9-5"/></symbol>
+  <symbol id="i-routine" viewBox="0 0 24 24"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"/></symbol>
+  <symbol id="i-ext" viewBox="0 0 24 24"><path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"/><polyline points="15 3 21 3 21 9"/><line x1="10" y1="14" x2="21" y2="3"/></symbol>
+  <symbol id="i-x" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></symbol>
+</svg>
+
+<div id="app">
+
+  <!-- ══ Barra superior ══ -->
+  <header>
+    <div class="brand"><div class="logo">★</div><span class="wordmark">Fidel</span></div>
+    <div class="vsep"></div>
+    <div class="pill" title="Proveedor y modelo activos">
+      <span class="dot" id="provDot"></span>
+      <select id="selProv"></select>
+      <select id="selModel"></select>
+    </div>
+    <div class="search">
+      <svg class="ico"><use href="#i-search"/></svg>
+      <input id="q" placeholder="Buscar o dar una orden…" spellcheck="false">
+      <kbd>Ctrl K</kbd>
+    </div>
+    <div class="flex1"></div>
+    <button class="ibtn" id="btnTheme" title="Cambiar tema"><svg class="ico"><use href="#i-sun"/></svg></button>
+    <button class="ibtn" id="btnKeys" title="Configuración de APIs"><svg class="ico"><use href="#i-gear"/></svg></button>
+    <button class="ibtn" id="btnWs" title="Abrir carpeta de proyecto"><svg class="ico"><use href="#i-folder"/></svg></button>
+    <button class="ibtn" id="btnOpen" title="Abrir archivo"><svg class="ico"><use href="#i-file"/></svg></button>
+    <button class="ibtn" id="btnSave" title="Guardar (Ctrl+S)"><svg class="ico"><use href="#i-save"/></svg></button>
+    <button class="run" id="btnRun"><svg class="ico ico-fill"><use href="#i-play"/></svg> Ejecutar</button>
+  </header>
+
+  <!-- ══ Cuerpo ══ -->
+  <div class="body">
+    <nav class="activity">
+      <button class="abtn active" id="abExplorer" title="Explorador"><svg class="ico"><use href="#i-files"/></svg></button>
+      <button class="abtn" id="abSearch" title="Buscar (Ctrl+K)"><svg class="ico"><use href="#i-search"/></svg></button>
+      <button class="abtn" id="abGit" title="Control de versiones"><svg class="ico"><use href="#i-git"/></svg></button>
+      <button class="abtn star" id="abAgent" title="Agente"><svg class="ico ico-fill"><use href="#i-star"/></svg></button>
+      <div class="act-sep"></div>
+      <button class="abtn" id="abArtifacts" title="Artefactos (vista previa en vivo)"><svg class="ico"><use href="#i-artifact"/></svg></button>
+      <button class="abtn" id="abRoutines" title="Rutinas (órdenes guardadas)"><svg class="ico"><use href="#i-routine"/></svg></button>
+      <button class="abtn" id="abTools" title="Herramientas del agente"><svg class="ico"><use href="#i-tool"/></svg></button>
+      <button class="abtn" id="abHistory" title="Historial de conversaciones"><svg class="ico"><use href="#i-history"/></svg></button>
+      <button class="abtn" id="abRanking" title="Ranking de modelos"><svg class="ico"><use href="#i-compare"/></svg></button>
+    </nav>
+
+    <aside class="treewrap" id="treewrap">
+      <div class="proj" id="projName">SIN PROYECTO</div>
+      <div id="tree"><div class="tree-empty">Abre una carpeta con el ícono de carpeta de arriba</div></div>
+    </aside>
+
+    <main class="editor">
+      <div class="tabs" id="tabs"></div>
+      <div class="cmwrap" id="cmwrap"></div>
+      <div class="term" id="term">
+        <div class="term-h">
+          <span class="term-t">Terminal</span>
+          <span class="term-s">Problemas · Salida</span>
+          <div class="flex1"></div>
+          <button class="term-tog" id="termTog"><svg class="ico"><use href="#i-chev-d"/></svg></button>
+        </div>
+        <div class="term-out" id="termOut"></div>
+      </div>
+    </main>
+
+    <!-- ══ Panel del agente ══ -->
+    <aside class="agent" id="agentPanel">
+      <div class="ag-h">
+        <span class="ag-t">Agente</span>
+        <span class="badge" id="agBadge">activo</span>
+        <div class="flex1"></div>
+        <button class="gbtn" id="btnCmp" title="Comparar modelos"><svg class="ico"><use href="#i-compare"/></svg></button>
+        <button class="gbtn" id="btnHist" title="Historial"><svg class="ico"><use href="#i-history"/></svg></button>
+        <button class="gbtn" id="btnNew" title="Nueva conversación"><svg class="ico"><use href="#i-plus"/></svg></button>
+      </div>
+      <div class="msgs" id="msgs"></div>
+      <div class="inz">
+        <div class="chips">
+          <span class="chip" data-chip="/compare">/compare</span>
+          <span class="chip" data-chip="/run">/run</span>
+          <span class="chip" data-chip="/files">/files</span>
+        </div>
+        <div class="inbox">
+          <textarea id="inp" rows="2" placeholder="Ordena algo a Fidel…" spellcheck="false"></textarea>
+          <button class="send" id="btnSend"><svg class="ico"><use href="#i-arrow"/></svg></button>
+        </div>
+      </div>
+    </aside>
+  </div>
+
+  <!-- ══ Barra de estado ══ -->
+  <footer>
+    <span class="f-item" id="ver" title="Versión de Fidel">Fidel</span>
+    <span class="f-item"><span class="dot off" id="apiDot"></span><span id="apiTxt">0 APIs conectadas</span></span>
+    <span class="f-item" id="branch"></span>
+    <span class="f-item" id="status">Listo</span>
+    <div class="flex1"></div>
+    <select id="selLang" class="langsel"></select>
+    <span class="f-item">UTF-8</span>
+    <span class="f-item" id="lncol">Ln 1, Col 1</span>
+  </footer>
+</div>
+
+<!-- Visor de artefactos: render en vivo del HTML/web generado, DENTRO de Fidel -->
+<div id="artView" hidden>
+  <div class="art-bar">
+    <span class="art-title" id="artTitle">Artefacto</span>
+    <select id="artSel" class="langsel" title="Artefactos generados"></select>
+    <div class="flex1"></div>
+    <button class="ibtn" id="artReload" title="Recargar"><svg class="ico"><use href="#i-history"/></svg></button>
+    <button class="ibtn" id="artExt" title="Abrir en el navegador"><svg class="ico"><use href="#i-ext"/></svg></button>
+    <button class="ibtn" id="artClose" title="Cerrar (Esc)"><svg class="ico"><use href="#i-x"/></svg></button>
+  </div>
+  <iframe id="artFrame" sandbox="allow-scripts allow-forms allow-modals allow-popups"></iframe>
+</div>
+
+<div class="overlay" id="overlay" hidden><div class="modal" id="modal"></div></div>
+
+<script src="vendor/codemirror.min.js"></script>
+<script src="vendor/mode-python.min.js"></script>
+<script src="vendor/mode-javascript.min.js"></script>
+<script src="vendor/mode-shell.min.js"></script>
+<script src="vendor/mode-powershell.min.js"></script>
+<script src="vendor/mode-xml.min.js"></script>
+<script src="vendor/mode-css.min.js"></script>
+<script src="vendor/mode-htmlmixed.min.js"></script>
+<script src="vendor/addon-closebrackets.min.js"></script>
+<script src="vendor/addon-activeline.min.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
