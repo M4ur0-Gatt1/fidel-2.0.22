@@ -23,6 +23,26 @@ def _tools_to_anthropic(tools):
     return out
 
 
+def _content_to_anthropic(content):
+    """Traduce el content multimodal formato OpenAI (lista de partes text/
+    image_url) al formato de bloques de Anthropic. Si content ya es un
+    string, lo deja tal cual."""
+    if not isinstance(content, list):
+        return content
+    blocks = []
+    for part in content:
+        t = part.get("type")
+        if t == "text":
+            blocks.append({"type": "text", "text": part.get("text", "")})
+        elif t == "image_url":
+            url = (part.get("image_url") or {}).get("url", "")
+            if url.startswith("data:") and ";base64," in url:
+                media_type, data = url[5:].split(";base64,", 1)
+                blocks.append({"type": "image", "source": {
+                    "type": "base64", "media_type": media_type, "data": data}})
+    return blocks
+
+
 def _msgs_to_anthropic(messages):
     out = []
     for m in messages:
@@ -46,7 +66,7 @@ def _msgs_to_anthropic(messages):
                                "name": tc["function"]["name"], "input": args})
             out.append({"role": "assistant", "content": blocks})
         else:
-            out.append({"role": role, "content": m.get("content", "")})
+            out.append({"role": role, "content": _content_to_anthropic(m.get("content", ""))})
     return out
 
 

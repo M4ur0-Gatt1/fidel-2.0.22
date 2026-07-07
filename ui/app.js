@@ -43,6 +43,7 @@ const S = {
   ws: null, providers: [], pending: null, plan: null, loading: false,
   expanded: new Set(), zoom: 1.0,
   chats: [], chatId: null, agent: {},
+  attachedImage: null,   // {data, mime, name} pendiente de enviar (visión)
 };
 const icoUse = name => `<svg class="ico"><use href="#${name}"/></svg>`;
 
@@ -88,12 +89,16 @@ window.Fidel = {
         let toolDesc = "";
         if (toolName === "read_file") toolDesc = `📖 Leyendo ${fileName}`;
         else if (toolName === "write_file") toolDesc = `✏️ Escribiendo ${fileName}`;
+        else if (toolName === "edit_file") toolDesc = `✏️ Editando ${fileName}`;
         else if (toolName === "exec_cmd") toolDesc = "⚡ Ejecutando comando";
         else if (toolName === "run_code") toolDesc = "▶ Ejecutando código";
         else if (toolName === "list_files") toolDesc = "📁 Listando archivos";
         else if (toolName === "search_code") toolDesc = "🔍 Buscando código";
+        else if (toolName === "generate_image") toolDesc = "🖼 Generando imagen";
         else toolDesc = `🔧 ${toolName}`;
         setStatus(toolDesc);
+        // indicador persistente: siempre a la vista donde está trabajando ahora
+        setWorkingOn(fileName || toolDesc.replace(/^\S+\s*/, ""));
         // Mostrar mensaje temporal con detalles
         let msgText = toolDesc;
         if (toolRes && toolRes.length > 0) {
@@ -278,6 +283,9 @@ function bind() {
   $("#btnSave").onclick = save;
   $("#btnRun").onclick = run;
   $("#btnSend").onclick = () => { if (S.busy) cancelRequest(); else send(); };
+  $("#btnAttach").onclick = attachImageDialog;
+  $("#imgPreviewClear").onclick = clearAttachedImage;
+  $("#inp").addEventListener("paste", onPasteImage);
   $("#btnHist").onclick = history_;
   $("#btnNew").onclick = newChat;
   $("#termTog").onclick = () => {
@@ -558,10 +566,58 @@ function startThinking() {
 function stopThinking() { clearInterval(S.thinkTimer); S.thinkTimer = null; }
 function persist(role, content) { api && api.persist(role, content); }
 
-function userMsg(text) {
+function userMsg(text, imgDataUrl) {
   const d = document.createElement("div");
-  d.className = "m-user"; d.textContent = text;
+  d.className = "m-user";
+  if (imgDataUrl) {
+    const img = document.createElement("img");
+    img.className = "m-user-img"; img.src = imgDataUrl;
+    d.appendChild(img);
+  }
+  if (text) {
+    const t = document.createElement("div");
+    t.textContent = text;
+    d.appendChild(t);
+  }
   $("#msgs").appendChild(d); scrollMsgs();
+}
+
+/* ── imagen adjunta (visión): diálogo, pegado desde portapapeles, preview ── */
+async function attachImageDialog() {
+  const img = await api.pick_image();
+  if (!img) return;
+  if (img.error) { sysMsg("❌ " + img.error); return; }
+  setAttachedImage(img);
+}
+
+function onPasteImage(e) {
+  const items = (e.clipboardData && e.clipboardData.items) || [];
+  for (const it of items) {
+    if (it.type && it.type.startsWith("image/")) {
+      e.preventDefault();
+      const file = it.getAsFile();
+      const reader = new FileReader();
+      reader.onload = () => {
+        const [, mime, data] = /^data:(.+?);base64,(.+)$/.exec(reader.result) || [];
+        if (data) setAttachedImage({ data, mime: mime || "image/png", name: "pegada.png" });
+      };
+      reader.readAsDataURL(file);
+      return;
+    }
+  }
+}
+
+function setAttachedImage(img) {
+  S.attachedImage = img;
+  $("#imgPreviewThumb").src = `data:${img.mime};base64,${img.data}`;
+  $("#imgPreviewName").textContent = img.name || "imagen";
+  $("#imgPreview").hidden = false;
+}
+
+function clearAttachedImage() {
+  S.attachedImage = null;
+  $("#imgPreview").hidden = true;
+  $("#imgPreviewThumb").src = "";
 }
 
 function agentMsg(text) {
@@ -629,19 +685,35 @@ function toolStep(name, res) {
 }
 
 function planDone() {
+  clearWorkingOn();
   if (!S.plan) return;
   S.plan.card.querySelector(".card-h .n").textContent = `${S.plan.steps}/${S.plan.steps}`;
   S.plan.card.querySelector(".prog > div").style.width = "100%";
   S.plan = null;
 }
 
+/* indicador en vivo de en qué archivo/acción está el agente ahora mismo */
+function setWorkingOn(text) {
+  const el = $("#workingOn");
+  el.textContent = text;
+  el.hidden = false;
+}
+function clearWorkingOn() {
+  const el = $("#workingOn");
+  el.hidden = true;
+  el.textContent = "";
+}
+
 async function send() {
   const inp = $("#inp");
   const msg = inp.value.trim();
-  if (!msg) return;
+  const img = S.attachedImage;
+  if (!msg && !img) return;
   inp.value = "";
   if (msg.startsWith("/")) return command(msg);
-  userMsg(msg); persist("user", msg);
+  userMsg(msg, img ? `data:${img.mime};base64,${img.data}` : null);
+  persist("user", msg || "(imagen adjunta)");
+  clearAttachedImage();
   const p = S.providers.find(x => x.name === $("#selProv").value);
   if (!p || (!p.has_key && p.name !== "custom")) {
     agentMsg("Configura la API key (⚙) para empezar");
@@ -651,7 +723,7 @@ async function send() {
   setBusy(true);
   S.plan = null;
   try {
-    const r = await api.send_chat(msg, cm.getValue(), effectiveLang());
+    const r = await api.send_chat(msg, cm.getValue(), effectiveLang(), img);
     stopThinking();
     planDone();
     // si vino por streaming, la burbuja ya se armó con los eventos agent_*

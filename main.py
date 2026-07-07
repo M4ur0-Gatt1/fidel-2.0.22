@@ -4,6 +4,7 @@ UI web (pywebview + WebView2) que implementa design_handoff_fidel_editor 1:1.
 Este módulo es el puente: expone la lógica Python (providers, runner, config)
 como js_api para ui/app.js. La versión CustomTkinter quedó en main_ctk.py.
 """
+import base64
 import datetime
 import difflib
 import http.server
@@ -34,7 +35,7 @@ CODE_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".md", ".txt", ".json",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.0.25"
+FIDEL_VERSION = "2.0.26"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -45,7 +46,11 @@ DEFAULT_EXPECTED = "2, 3, 5, 7, 11, 13, 17, 19, 23, 29"
 # ningún filtro ni instrucción oculta más allá de esto.
 DEFAULT_SP = ("Eres Fidel, programador senior. Tienes HERRAMIENTAS: read_file, "
               "write_file, edit_file, exec_cmd, run_code, list_files, search_code, "
-              "git, ssh_exec, scp_upload. Usalas y ACTUA directo, sin pedir permiso. "
+              "git, ssh_exec, scp_upload, generate_image. Usalas y ACTUA directo, sin pedir permiso. "
+              "Si el usuario adjunta una imagen la ves directo en el mensaje (mockup, "
+              "screenshot, foto de un error) — describila o usala de referencia segun "
+              "lo que pida. Para generar assets/ilustraciones usa generate_image "
+              "(requiere key de OpenAI o SiliconFlow cargada en Configuracion). "
               "Antes de editar un proyecto grande, usa search_code para ubicar lo que "
               "buscas. Para modificar un archivo QUE YA EXISTE preferi edit_file "
               "(reemplaza solo el fragmento exacto que cambia) — es mas confiable y "
@@ -411,6 +416,27 @@ class Api:
             return None
         return s._file_payload(r[0] if isinstance(r, (list, tuple)) else str(r))
 
+    IMG_MIME = {".png": "image/png", ".jpg": "image/jpeg", ".jpeg": "image/jpeg",
+                ".gif": "image/gif", ".webp": "image/webp", ".bmp": "image/bmp"}
+
+    def pick_image(s):
+        """Diálogo de archivo para adjuntar una imagen al chat (visión).
+        Devuelve {data, mime, name} en base64, listo para mandar al modelo."""
+        r = s._window.create_file_dialog(
+            webview.OPEN_DIALOG,
+            file_types=("Imágenes (*.png;*.jpg;*.jpeg;*.gif;*.webp;*.bmp)",))
+        if not r:
+            return None
+        p = Path(r[0] if isinstance(r, (list, tuple)) else str(r))
+        mime = s.IMG_MIME.get(p.suffix.lower())
+        if not mime:
+            return {"error": f"Formato no soportado: {p.suffix}"}
+        try:
+            data = base64.b64encode(p.read_bytes()).decode("ascii")
+        except OSError as e:
+            return {"error": str(e)}
+        return {"data": data, "mime": mime, "name": p.name}
+
     def save_file(s, path, content):
         if not path:
             r = s._window.create_file_dialog(webview.SAVE_DIALOG,
@@ -609,6 +635,7 @@ class Api:
             {"type": "function", "function": {"name": "git", "description": "Ejecuta un comando git EN EL WORKSPACE (status, add, commit, push, pull, log, diff, branch, clone, remote, init...). Para SUBIR A GITHUB: 'add -A' -> 'commit -m \"mensaje\"' -> 'push'. Si el repo no existe aun podes usar exec_cmd con 'gh repo create' (gh CLI ya esta autenticado). No hace falta pedir permiso.", "parameters": {"type": "object", "properties": {"args": {"type": "string", "description": "argumentos de git, ej: commit -m \"fix login\""}}, "required": ["args"]}}},
             {"type": "function", "function": {"name": "ssh_exec", "description": "Ejecuta un comando en un servidor remoto por SSH y devuelve stdout/stderr. 'host' puede ser un ALIAS guardado (ver lista de servidores) o 'usuario@ip' directo. Usalo para administrar servidores, desplegar, revisar logs, etc.", "parameters": {"type": "object", "properties": {"host": {"type": "string", "description": "alias guardado o usuario@ip"}, "command": {"type": "string"}}, "required": ["host", "command"]}}},
             {"type": "function", "function": {"name": "scp_upload", "description": "Sube un archivo o carpeta local a un servidor remoto por scp. 'host' = alias guardado o usuario@ip.", "parameters": {"type": "object", "properties": {"host": {"type": "string"}, "local": {"type": "string", "description": "ruta local (relativa al workspace o absoluta)"}, "remote": {"type": "string", "description": "ruta destino en el servidor"}}, "required": ["host", "local", "remote"]}}},
+            {"type": "function", "function": {"name": "generate_image", "description": "Genera una imagen a partir de una descripcion (DALL-E de OpenAI, o SiliconFlow si no hay key de OpenAI) y la guarda en el workspace. Requiere API key de OpenAI o SiliconFlow cargada en Configuracion.", "parameters": {"type": "object", "properties": {"prompt": {"type": "string", "description": "descripcion de la imagen a generar, en ingles da mejor resultado"}, "path": {"type": "string", "description": "ruta donde guardarla dentro del workspace, ej assets/logo.png. Si se omite usa assets/img_<fecha>.png"}, "size": {"type": "string", "description": "tamano, ej 1024x1024 (default) — no todos los tamanos existen en todos los proveedores"}}, "required": ["prompt"]}}},
         ]
 
     def _exec_tool(s, name, args, code, lang):
@@ -766,8 +793,78 @@ class Api:
                     except (OSError, UnicodeDecodeError):
                         pass
                 return "\n".join(hits) or f"(sin coincidencias para «{q}»)"
+            if name == "generate_image":
+                prompt = (args.get("prompt") or "").strip()
+                if not prompt:
+                    return "❌ Falta 'prompt' — describí la imagen que querés generar."
+                size = args.get("size") or "1024x1024"
+                rel = args.get("path") or (
+                    f"assets/img_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
+                img_bytes, used, err = s._gen_image(prompt, size)
+                if err:
+                    return f"❌ {err}"
+                p = s._base() / rel
+                p.parent.mkdir(parents=True, exist_ok=True)
+                p.write_bytes(img_bytes)
+                s._written.append(str(p))
+                s._push("wrote", {"path": str(p)})
+                return f"✅ Imagen generada con {used} → {rel}"
         except Exception as e:
             return f"❌ {e}"
+
+    def _gen_image(s, prompt, size="1024x1024"):
+        """Genera una imagen con la primera API disponible: OpenAI (dall-e-3)
+        y si no hay key, SiliconFlow. Devuelve (bytes, proveedor_usado, error) —
+        exactamente uno de (bytes, error) es no-None."""
+        err_openai = err_sf = None
+        ok = s.cfg.get_api_key("openai")
+        if ok:
+            try:
+                r = requests.post(
+                    "https://api.openai.com/v1/images/generations",
+                    headers={"Authorization": f"Bearer {ok}", "Content-Type": "application/json"},
+                    json={"model": "dall-e-3", "prompt": prompt, "size": size,
+                          "n": 1, "response_format": "b64_json"},
+                    timeout=90)
+                if r.ok:
+                    b64 = r.json()["data"][0]["b64_json"]
+                    return base64.b64decode(b64), "OpenAI (dall-e-3)", None
+                try:
+                    detail = (r.json().get("error") or {}).get("message", r.text[:200])
+                except ValueError:
+                    detail = r.text[:200]
+                err_openai = f"OpenAI: {detail}"
+            except requests.RequestException as e:
+                err_openai = f"OpenAI: {e}"
+        sk = s.cfg.get_api_key("siliconflow")
+        if sk:
+            try:
+                r = requests.post(
+                    "https://api.siliconflow.com/v1/images/generations",
+                    headers={"Authorization": f"Bearer {sk}", "Content-Type": "application/json"},
+                    json={"model": "black-forest-labs/FLUX.1-schnell", "prompt": prompt, "image_size": size},
+                    timeout=90)
+                if r.ok:
+                    d = (r.json().get("data") or [{}])[0]
+                    if d.get("b64_json"):
+                        return base64.b64decode(d["b64_json"]), "SiliconFlow", None
+                    if d.get("url"):
+                        img = requests.get(d["url"], timeout=60)
+                        img.raise_for_status()
+                        return img.content, "SiliconFlow", None
+                    err_sf = "SiliconFlow: respuesta sin imagen"
+                else:
+                    try:
+                        detail = (r.json().get("error") or {}).get("message", r.text[:200])
+                    except ValueError:
+                        detail = r.text[:200]
+                    err_sf = f"SiliconFlow: {detail}"
+            except requests.RequestException as e:
+                err_sf = f"SiliconFlow: {e}"
+        if not ok and not sk:
+            return None, None, ("no hay API key de OpenAI ni de SiliconFlow cargada — "
+                                 "agregá una en Configuración (⚙) para generar imágenes")
+        return None, None, " · ".join(x for x in (err_openai, err_sf) if x) or "no se pudo generar la imagen"
 
     def _check_written(s):
         """Verifica la sintaxis de los archivos escritos por el agente en este turno.
@@ -836,7 +933,7 @@ class Api:
         return s.prov.chat(ms, system_prompt=sp, temperature=temperature,
                            max_tokens=max_tok, tools=tools)
 
-    def send_chat(s, msg, code, lang):
+    def send_chat(s, msg, code, lang, image=None):
         r = None
         s._written = []
         s._checkpoint = {}   # arranca el checkpoint del turno
@@ -856,8 +953,21 @@ class Api:
             if lessons:
                 sp += ("\n\nLECCIONES APRENDIDAS de errores previos (RESPETALAS estrictamente):\n"
                        + "\n".join(f"- {x['txt']}" for x in lessons[-12:]))
+            # imagen adjunta (visión): arma el content multimodal formato OpenAI
+            # ({"type":"image_url",...}); cada provider lo traduce si hace falta
+            # (ver _msgs_to_anthropic). No se guarda en la memoria del turno para
+            # no arrastrar el base64 (pesado) a los mensajes siguientes.
+            user_text = ctx + msg
+            if image and image.get("data"):
+                user_content = [
+                    {"type": "text", "text": user_text or "Describí esta imagen."},
+                    {"type": "image_url", "image_url": {
+                        "url": f"data:{image.get('mime', 'image/png')};base64,{image['data']}"}},
+                ]
+            else:
+                user_content = user_text
             # memoria: incluir los últimos turnos para que el agente tenga contexto
-            ms = list(s._mem[-s._mem_limit():]) + [{"role": "user", "content": ctx + msg}]
+            ms = list(s._mem[-s._mem_limit():]) + [{"role": "user", "content": user_content}]
             text = ""
             use_tools = True
             flubs = 0

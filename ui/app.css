@@ -280,6 +280,8 @@ header {
   border-radius: 12px 12px 4px 12px; padding: 9px 13px;
   font-size: 12.5px; line-height: 1.5; user-select: text; white-space: pre-wrap;
 }
+.m-user-img { display: block; max-width: 220px; max-height: 220px; border-radius: 8px; }
+.m-user-img + div { margin-top: 7px; }
 .m-agent { display: flex; flex-direction: column; gap: 8px; max-width: 95%; }
 .m-head { display: flex; align-items: center; gap: 7px; }
 .m-ava {
@@ -347,8 +349,34 @@ header {
 .chg-btns .no:hover { color: var(--txt); border-color: var(--mut); }
 .chg-btns button:disabled { opacity: .45; pointer-events: none; }
 
+/* indicador en vivo: en que archivo esta trabajando el agente ahora mismo */
+.working-on {
+  display: flex; align-items: center; gap: 7px; padding: 6px 14px;
+  font: 400 11px 'JetBrains Mono', monospace; color: var(--mut);
+  border-bottom: 1px solid var(--line); background: var(--panel);
+  overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex: none;
+}
+.working-on::before { content: ""; width: 6px; height: 6px; border-radius: 99px;
+  background: var(--green); flex: none; animation: wo-pulse 1.4s ease-in-out infinite; }
+.working-on[hidden] { display: none; }
+@keyframes wo-pulse { 0%, 100% { opacity: .4; } 50% { opacity: 1; } }
+
 /* zona de entrada */
 .inz { padding: 12px 14px; border-top: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; }
+.img-preview {
+  display: flex; align-items: center; gap: 8px; padding: 6px 8px;
+  background: var(--panel2); border: 1px solid var(--line); border-radius: 8px;
+}
+.img-preview img { width: 30px; height: 30px; object-fit: cover; border-radius: 5px; }
+.img-preview span {
+  flex: 1; font-size: 11.5px; color: var(--mut); overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+}
+.img-preview button { background: none; border: none; color: var(--mut); display: inline-flex; cursor: pointer; }
+.img-preview button:hover { color: var(--red); }
+.img-preview button .ico { width: 13px; height: 13px; }
+.img-preview[hidden] { display: none; }
+.inbox .gbtn { padding-bottom: 8px; }
 .chips { display: flex; gap: 6px; }
 .chip {
   font: 500 10.5px 'JetBrains Mono', monospace; color: var(--mut);
