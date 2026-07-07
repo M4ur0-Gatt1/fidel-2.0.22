@@ -425,6 +425,19 @@ footer {
   padding: 7px 10px; color: var(--txt); font: 400 12px 'Figtree', sans-serif; outline: none;
 }
 .agrow input:focus { border-color: var(--mut); }
+.srv-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
+.srv-row input {
+  flex: 1; min-width: 0; background: var(--panel2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 8px; color: var(--txt);
+  font: 400 12px 'Figtree', sans-serif; outline: none;
+}
+.srv-row input:focus { border-color: var(--mut); }
+.srv-row .srv-port { flex: 0 0 48px; }
+.srv-del {
+  flex: none; background: none; border: none; color: var(--faint);
+  cursor: pointer; font-size: 14px; padding: 2px 4px;
+}
+.srv-del:hover { color: var(--red); }
 .cmp-field {
   width: 100%; background: var(--panel2); border: 1px solid var(--line);
   border-radius: 8px; padding: 8px 10px; color: var(--txt); outline: none;

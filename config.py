@@ -40,6 +40,9 @@ DEFAULT_CONFIG = {
         "max_continuations": 25,  # veces que sigue solo tras llegar al tope de pasos
         "memory_turns": 24,       # turnos de conversación que recuerda en la sesión
     },
+    # servidores SSH guardados (alias reutilizables para ssh_exec/scp_upload):
+    # [{"name": "yungas", "user": "root", "host": "1.2.3.4", "port": "", "key": ""}]
+    "ssh_hosts": [],
     "providers": {
         "deepseek": {"api_key": "", "model": "deepseek-chat", "base_url": ""},
         "nvidia": {"api_key": "", "model": "meta/llama-3.3-70b-instruct", "base_url": ""},

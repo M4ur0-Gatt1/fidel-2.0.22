@@ -34,7 +34,7 @@ CODE_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".md", ".txt", ".json",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.0.23"
+FIDEL_VERSION = "2.0.24"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -44,16 +44,20 @@ DEFAULT_EXPECTED = "2, 3, 5, 7, 11, 13, 17, 19, 23, 29"
 # System prompt por defecto del agente. Editable desde ⚙ — Fidel no agrega
 # ningún filtro ni instrucción oculta más allá de esto.
 DEFAULT_SP = ("Eres Fidel, programador senior. Tienes HERRAMIENTAS: read_file, "
-              "write_file, edit_file, exec_cmd, run_code, list_files, search_code. "
-              "Usalas y ACTUA directo, sin pedir permiso. Antes de editar un proyecto "
-              "grande, usa search_code para ubicar lo que buscas. Para modificar un "
-              "archivo QUE YA EXISTE preferi edit_file (reemplaza solo el fragmento "
-              "exacto que cambia) — es mas confiable y barato que reescribir todo el "
-              "archivo. Usa write_file solo para archivos nuevos o reescrituras "
-              "completas cortas. Al escribir codigo: sintaxis valida. No repitas la "
-              "misma llamada a herramienta si ya te devolvio resultado — si algo no "
-              "funciona, cambia de enfoque. No crees entornos virtuales salvo pedido "
-              "explicito. Responde en espanol, breve.")
+              "write_file, edit_file, exec_cmd, run_code, list_files, search_code, "
+              "git, ssh_exec, scp_upload. Usalas y ACTUA directo, sin pedir permiso. "
+              "Antes de editar un proyecto grande, usa search_code para ubicar lo que "
+              "buscas. Para modificar un archivo QUE YA EXISTE preferi edit_file "
+              "(reemplaza solo el fragmento exacto que cambia) — es mas confiable y "
+              "barato que reescribir todo el archivo. Usa write_file solo para archivos "
+              "nuevos o reescrituras completas cortas. Elegi el lenguaje mas adecuado "
+              "para cada tarea. Para SUBIR A GITHUB usa la herramienta git: 'add -A', "
+              "'commit -m \"mensaje\"', 'push' (gh CLI esta autenticado para crear repos). "
+              "Para servidores usa ssh_exec (podes pasar un alias guardado o usuario@ip) "
+              "y scp_upload para subir archivos. Al escribir codigo: sintaxis valida. No "
+              "repitas la misma llamada a herramienta si ya te devolvio resultado — si "
+              "algo no funciona, cambia de enfoque. No crees entornos virtuales salvo "
+              "pedido explicito. Responde en espanol, breve.")
 
 
 LOG_PATH = data_dir() / 'fidel.log'
@@ -184,6 +188,7 @@ class Api:
             "routines": s.cfg.data.get("routines", []),
             "agent": s.cfg.data.get("agent", {}),
             "session_id": s.ses_id,
+            "ssh_hosts": s.cfg.data.get("ssh_hosts", []),
         }
         st.update(s._apis_state())
         return st
@@ -484,6 +489,46 @@ class Api:
             kw["base_url"] = d["base_url"]
         return get_provider(name, api_key=d.get("api_key", ""), **kw)
 
+    # ── servidores SSH guardados ──────────────────────────
+    def _resolve_ssh(s, alias_or_target):
+        """Devuelve (target, key, port). Si 'alias_or_target' coincide con un
+        servidor guardado (config ssh_hosts), usa sus datos; si no, lo trata
+        como 'usuario@ip' directo."""
+        alias_or_target = (alias_or_target or "").strip()
+        for h in s.cfg.data.get("ssh_hosts", []):
+            if h.get("name") == alias_or_target:
+                user = (h.get("user") or "").strip()
+                host = (h.get("host") or "").strip()
+                target = f"{user}@{host}" if user else host
+                return target, (h.get("key") or "").strip(), h.get("port")
+        return alias_or_target, "", None
+
+    @staticmethod
+    def _ssh_base(target, key, port):
+        parts = ["ssh", "-o", "StrictHostKeyChecking=accept-new",
+                 "-o", "ConnectTimeout=15", "-o", "BatchMode=yes"]
+        if port:
+            parts += ["-p", str(port)]
+        if key:
+            parts += ["-i", key]
+        parts.append(target)
+        return parts
+
+    def save_ssh_hosts(s, hosts):
+        """Guarda la lista de servidores SSH (⚙). Cada uno: name, user, host, port, key."""
+        clean = []
+        for h in (hosts or []):
+            name = (h.get("name") or "").strip()
+            host = (h.get("host") or "").strip()
+            if not name or not host:
+                continue
+            clean.append({"name": name, "user": (h.get("user") or "").strip(),
+                          "host": host, "port": h.get("port") or "",
+                          "key": (h.get("key") or "").strip()})
+        s.cfg.data["ssh_hosts"] = clean
+        s.cfg.save()
+        return {"ssh_hosts": clean}
+
     # ── agente ────────────────────────────────────────────
     def _get_tools(s):
         return [
@@ -494,6 +539,9 @@ class Api:
             {"type": "function", "function": {"name": "run_code", "description": "Corre codigo del editor", "parameters": {"type": "object", "properties": {"language": {"type": "string"}}, "required": ["language"]}}},
             {"type": "function", "function": {"name": "list_files", "description": "Lista archivos del workspace", "parameters": {"type": "object", "properties": {"path": {"type": "string"}}}}},
             {"type": "function", "function": {"name": "search_code", "description": "Busca texto/regex en los archivos del proyecto y devuelve archivo:linea:coincidencia. Usalo para ubicar funciones o usos antes de editar.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
+            {"type": "function", "function": {"name": "git", "description": "Ejecuta un comando git EN EL WORKSPACE (status, add, commit, push, pull, log, diff, branch, clone, remote, init...). Para SUBIR A GITHUB: 'add -A' -> 'commit -m \"mensaje\"' -> 'push'. Si el repo no existe aun podes usar exec_cmd con 'gh repo create' (gh CLI ya esta autenticado). No hace falta pedir permiso.", "parameters": {"type": "object", "properties": {"args": {"type": "string", "description": "argumentos de git, ej: commit -m \"fix login\""}}, "required": ["args"]}}},
+            {"type": "function", "function": {"name": "ssh_exec", "description": "Ejecuta un comando en un servidor remoto por SSH y devuelve stdout/stderr. 'host' puede ser un ALIAS guardado (ver lista de servidores) o 'usuario@ip' directo. Usalo para administrar servidores, desplegar, revisar logs, etc.", "parameters": {"type": "object", "properties": {"host": {"type": "string", "description": "alias guardado o usuario@ip"}, "command": {"type": "string"}}, "required": ["host", "command"]}}},
+            {"type": "function", "function": {"name": "scp_upload", "description": "Sube un archivo o carpeta local a un servidor remoto por scp. 'host' = alias guardado o usuario@ip.", "parameters": {"type": "object", "properties": {"host": {"type": "string"}, "local": {"type": "string", "description": "ruta local (relativa al workspace o absoluta)"}, "remote": {"type": "string", "description": "ruta destino en el servidor"}}, "required": ["host", "local", "remote"]}}},
         ]
 
     def _exec_tool(s, name, args, code, lang):
@@ -563,6 +611,41 @@ class Api:
                 r = subprocess.run(args["command"], shell=True, capture_output=True,
                                    text=True, timeout=30, cwd=str(s._base()))
                 return f"⚡ exit={r.returncode}\n" + ((r.stdout + "\n" + r.stderr).strip()[:3000])
+            if name == "git":
+                a = (args.get("args") or "").strip()
+                if not a:
+                    return "❌ Faltan argumentos de git (ej: 'commit -m \"msg\"', 'push')"
+                r = subprocess.run("git " + a, shell=True, capture_output=True,
+                                   text=True, timeout=180, cwd=str(s._base()))
+                out = (r.stdout + "\n" + r.stderr).strip()
+                return f"⎇ git {a} (exit={r.returncode})\n{out[:3500] or '(sin salida)'}"
+            if name == "ssh_exec":
+                target, key, port = s._resolve_ssh(args.get("host", ""))
+                if not target:
+                    return "❌ Falta el host (alias guardado o usuario@ip)"
+                cmd = args.get("command", "")
+                if not cmd:
+                    return "❌ Falta el comando a ejecutar en el servidor"
+                r = subprocess.run(s._ssh_base(target, key, port) + [cmd],
+                                   capture_output=True, text=True, timeout=180)
+                out = (r.stdout + "\n" + r.stderr).strip()
+                return f"🔌 {target} (exit={r.returncode})\n{out[:3500] or '(sin salida)'}"
+            if name == "scp_upload":
+                target, key, port = s._resolve_ssh(args.get("host", ""))
+                if not target:
+                    return "❌ Falta el host"
+                local = args.get("local", "")
+                lp = local if os.path.isabs(local) else str(s._base() / local)
+                remote = args.get("remote", "")
+                parts = ["scp", "-r", "-o", "StrictHostKeyChecking=accept-new"]
+                if port:
+                    parts += ["-P", str(port)]
+                if key:
+                    parts += ["-i", key]
+                parts += [lp, f"{target}:{remote}"]
+                r = subprocess.run(parts, capture_output=True, text=True, timeout=300)
+                out = (r.stdout + "\n" + r.stderr).strip()
+                return f"📤 {local} → {target}:{remote} (exit={r.returncode})\n{out[:2000]}"
             if name == "run_code":
                 if not code or code.strip() == "// Nuevo archivo":
                     return "❌ Editor vacio"
@@ -1160,7 +1243,21 @@ class Api:
                 r = subprocess.run(arg, shell=True, capture_output=True, text=True,
                                    timeout=30, cwd=s.ws)
                 return msgs(f"$ {arg}\n{(r.stdout + r.stderr)[:2000]}")
+            if cmd == "git" and arg:
+                return msgs(s._exec_tool("git", {"args": arg}, "", "python"))
+            if cmd == "commit":
+                m = arg.strip() or "update"
+                s._exec_tool("git", {"args": "add -A"}, "", "python")
+                return msgs(s._exec_tool("git", {"args": f'commit -m "{m}"'}, "", "python"))
+            if cmd == "push":
+                return msgs(s._exec_tool("git", {"args": "push " + arg}, "", "python"))
             if cmd == "ssh" and arg:
+                # /ssh <alias|user@ip> <comando…>  — alias guardado o destino directo
+                host, _, rest = arg.partition(" ")
+                if rest.strip():
+                    return msgs(s._exec_tool("ssh_exec",
+                                             {"host": host, "command": rest.strip()},
+                                             "", "python"))
                 r = subprocess.run(f"ssh {arg}", shell=True, capture_output=True,
                                    text=True, timeout=60)
                 return msgs("🔌\n" + (r.stdout + r.stderr)[:2000])

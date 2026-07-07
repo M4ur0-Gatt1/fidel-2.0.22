@@ -162,8 +162,9 @@ async function init() {
   initSplitters();
   sysMsg("Fidel v" + (S.version || "?") + " — listo.\n" +
          "⚙ API keys · 📁 proyecto · barra izquierda: 🧊 Artefactos (vista previa en vivo), " +
-         "⟳ Rutinas, 🔧 Herramientas, ⟲ Historial, ▦ Ranking.\n" +
-         "Comandos: /compare /ranking /undo /history /resume /run /files /search /preview · Zoom Ctrl +/−/0");
+         "⟳ Rutinas, 🔧 Herramientas, 🖧 Servidores SSH, ⟲ Historial, ▦ Ranking.\n" +
+         "El agente sabe git, ssh y scp: pedile «subí esto a github» o «entrá al server X y…».\n" +
+         "Comandos: /commit /push /git /ssh /compare /ranking /undo /history /resume /run /files /search /preview · Zoom Ctrl +/−/0");
   api.log_js("init ok · zoom=" + S.zoom + " · figtree=" +
              document.fonts.check("12px Figtree") + " · jbmono=" +
              document.fonts.check("12px 'JetBrains Mono'"));
@@ -217,6 +218,7 @@ function applyState(st) {
   S.agentTools = st.tools || [];
   S.routines = st.routines || [];
   S.agent = st.agent || {};
+  S.sshHosts = st.ssh_hosts || [];
   if (st.session_id) S.chatId = st.session_id;
   S.version = st.version || "";
   if (st.version) $("#ver").textContent = "Fidel v" + st.version;
@@ -308,6 +310,7 @@ function bind() {
   $("#abArtifacts").onclick = showArtifacts;
   $("#abRoutines").onclick = modalRoutines;
   $("#abTools").onclick = modalTools;
+  $("#abServers").onclick = modalServers;
   $("#abHistory").onclick = modalHistory;
   $("#abRanking").onclick = () => { showLeaderboard(); };
   // visor de artefactos
@@ -1113,6 +1116,53 @@ function modalRoutines() {
     S.routines = st.routines; modalRoutines();
   };
   $("#mCancel").onclick = closeModal;
+}
+
+/* ── Servidores SSH (alias para ssh_exec / scp_upload / /ssh) ── */
+function modalServers() {
+  const esc = v => (v == null ? "" : String(v)).replace(/"/g, "&quot;");
+  const hosts = (S.sshHosts || []).map(h => ({ ...h }));   // copia editable
+  openModal(`<h2>Servidores SSH</h2>
+    <div class="sub">Guardá servidores para que el agente los use por alias
+    (ssh_exec / scp_upload) o con <b>/ssh &lt;alias&gt; &lt;comando&gt;</b>.
+    «clave» = ruta a tu clave privada (opcional si usás el agente SSH).</div>
+    <div id="srvList"></div>
+    <button class="ghost" id="srvAdd" style="margin-top:8px">＋ Agregar servidor</button>
+    <div class="m-actions">
+      <button class="ghost" id="mCancel">Cancelar</button>
+      <button class="primary" id="mSave">Guardar</button>
+    </div>`);
+  const render = () => {
+    const box = $("#srvList");
+    box.innerHTML = "";
+    if (!hosts.length) { box.innerHTML = '<div class="sub">Todavía no hay servidores.</div>'; return; }
+    hosts.forEach((h, i) => {
+      const row = document.createElement("div");
+      row.className = "srv-row";
+      row.innerHTML =
+        `<input data-k="name" placeholder="alias" value="${esc(h.name)}" spellcheck="false">` +
+        `<input data-k="user" placeholder="usuario" value="${esc(h.user)}" spellcheck="false">` +
+        `<input data-k="host" placeholder="ip o dominio" value="${esc(h.host)}" spellcheck="false">` +
+        `<input data-k="port" placeholder="22" value="${esc(h.port)}" class="srv-port" spellcheck="false">` +
+        `<input data-k="key" placeholder="ruta clave (opcional)" value="${esc(h.key)}" spellcheck="false">` +
+        `<button class="srv-del" title="Quitar">✕</button>`;
+      row.querySelectorAll("input").forEach(inp => {
+        inp.oninput = () => { hosts[i][inp.dataset.k] = inp.value; };
+      });
+      row.querySelector(".srv-del").onclick = () => { hosts.splice(i, 1); render(); };
+      box.appendChild(row);
+    });
+  };
+  render();
+  $("#srvAdd").onclick = () => { hosts.push({ name: "", user: "", host: "", port: "", key: "" }); render(); };
+  $("#mCancel").onclick = closeModal;
+  $("#mSave").onclick = async () => {
+    const r = await api.save_ssh_hosts(
+      hosts.filter(h => (h.name || "").trim() && (h.host || "").trim()));
+    S.sshHosts = r.ssh_hosts;
+    closeModal();
+    sysMsg(`✅ ${S.sshHosts.length} servidor(es) SSH guardado(s). Usalos por alias con ssh_exec o /ssh.`);
+  };
 }
 
 /* ── Historial de conversaciones (clickeable → restaurar) ── */
