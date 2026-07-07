@@ -35,7 +35,7 @@ CODE_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".md", ".txt", ".json",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.0.27"
+FIDEL_VERSION = "2.0.28"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -162,6 +162,120 @@ class Api:
         except Exception as e:
             log(f"reflect fallo: {e}")
 
+    # ── Habilidades: aprende de lo que le sale BIEN y lo reutiliza ──
+    # (complemento positivo de Reflexion; patrón "skill library" tipo Nous/Voyager)
+    def _skills_path(s):
+        return data_dir() / 'habilidades.json'
+
+    def _load_skills(s):
+        try:
+            data = json.loads(s._skills_path().read_text(encoding="utf-8"))
+            return data if isinstance(data, list) else []
+        except (OSError, ValueError):
+            return []
+
+    def skills(s):
+        """Para el frontend: lista de habilidades aprendidas (⚙/panel)."""
+        return s._load_skills()
+
+    def delete_skill(s, name):
+        sk = [x for x in s._load_skills() if x.get("name") != name]
+        try:
+            s._skills_path().write_text(json.dumps(sk, ensure_ascii=False, indent=2),
+                                        encoding="utf-8")
+        except OSError:
+            pass
+        return {"skills": sk}
+
+    @staticmethod
+    def _words(txt):
+        return {w for w in re.findall(r"[a-záéíóúñ0-9]{4,}", (txt or "").lower())}
+
+    def _relevant_skills(s, msg, k=3):
+        """Habilidades cuyo disparador se solapa con el pedido actual (top-k por
+        cantidad de palabras en común). Evita inyectar toda la biblioteca al prompt."""
+        skills = s._load_skills()
+        if not skills:
+            return []
+        mw = s._words(msg)
+        if not mw:
+            return []
+        scored = []
+        for sk in skills:
+            sw = s._words(sk.get("name", "") + " " + sk.get("when", ""))
+            score = len(mw & sw)
+            if score:
+                scored.append((score, sk))
+        scored.sort(key=lambda x: -x[0])
+        return [sk for _, sk in scored[:k]]
+
+    @staticmethod
+    def _as_text(v):
+        """El modelo a veces devuelve steps/when como lista JSON en vez de string.
+        Normaliza cualquier cosa a texto plano."""
+        if isinstance(v, list):
+            return "\n".join(str(x) for x in v)
+        if v is None:
+            return ""
+        return str(v)
+
+    def _save_skill(s, skill):
+        name = s._as_text(skill.get("name")).strip()
+        steps = s._as_text(skill.get("steps")).strip()
+        if not name or not steps:
+            return False
+        sk = s._load_skills()
+        # reemplazar si ya existe una con el mismo nombre (la mejora, no duplica)
+        sk = [x for x in sk if x.get("name", "").lower() != name.lower()]
+        sk.append({"name": name[:80],
+                   "when": s._as_text(skill.get("when"))[:200],
+                   "steps": steps[:800],
+                   "ts": datetime.datetime.now().isoformat()})
+        sk = sk[-60:]
+        try:
+            s._skills_path().write_text(json.dumps(sk, ensure_ascii=False, indent=2),
+                                        encoding="utf-8")
+            return True
+        except OSError as e:
+            log(f"no pude guardar habilidad: {e}")
+            return False
+
+    def _learn_skill(s, task, summary):
+        """Tras un turno EXITOSO y no trivial, destila una habilidad reutilizable
+        (nombre + cuándo aplicarla + pasos) y la guarda. Misma llave de config que
+        Reflexion (agent.learn). Devuelve el nombre aprendido o None."""
+        if not s.cfg.data.get("agent", {}).get("learn", True):
+            return None
+        if not s.prov:
+            return None
+        try:
+            r = s.prov.chat(
+                [{"role": "user", "content":
+                  f"Acabás de resolver con éxito esta tarea:\n«{(task or '')[:400]}»\n"
+                  f"Lo que hiciste, en breve:\n{(summary or '')[:600]}\n\n"
+                  "Si (y solo si) esto es un procedimiento GENERAL y reutilizable en "
+                  "tareas futuras parecidas, destilalo como habilidad. Si fue algo "
+                  "puntual que no sirve reutilizar, devolvé exactamente NO_APLICA.\n"
+                  "Formato JSON estricto sin markdown: "
+                  '{"name":"nombre corto","when":"cuándo aplicarla","steps":"pasos concretos, uno por línea"}'}],
+                system_prompt="Sos un ingeniero senior que arma una biblioteca de habilidades reutilizables. Respondés SOLO con el JSON pedido o NO_APLICA.",
+                temperature=0.3, max_tokens=350)
+            out = re.sub(r"<think>.*?</think>", "", r.content or "", flags=re.DOTALL).strip()
+            if not out or "NO_APLICA" in out.upper():
+                return None
+            m = re.search(r"\{.*\}", out, re.DOTALL)
+            if not m:
+                return None
+            skill = json.loads(m.group(0))
+            if s._save_skill(skill):
+                nm = s._as_text(skill.get("name"))
+                s._push("sys", f"🧠 Nueva habilidad: {nm}")
+                return nm
+        except Exception as e:
+            # defensa amplia a propósito: aprender NUNCA debe romper un turno exitoso
+            log(f"learn_skill fallo: {e}")
+        return None
+
     # ── infraestructura ───────────────────────────────────
     def _push(s, event, data):
         if not s._window:
@@ -251,6 +365,7 @@ class Api:
             "session_id": s.ses_id,
             "ssh_hosts": s.cfg.data.get("ssh_hosts", []),
             "lessons": len(s._load_lessons()),
+            "skills": len(s._load_skills()),
         }
         st.update(s._apis_state())
         return st
@@ -1025,6 +1140,12 @@ class Api:
             if lessons:
                 sp += ("\n\nLECCIONES APRENDIDAS de errores previos (RESPETALAS estrictamente):\n"
                        + "\n".join(f"- {x['txt']}" for x in lessons[-12:]))
+            # Habilidades: inyectar solo las relevantes al pedido (patrón positivo)
+            rel_skills = s._relevant_skills(msg)
+            if rel_skills:
+                sp += ("\n\nHABILIDADES APRENDIDAS aplicables a este pedido (usalas como guía):\n"
+                       + "\n".join(f"• {sk['name']} — cuándo: {sk.get('when','')}\n"
+                                   f"  pasos: {sk.get('steps','')}" for sk in rel_skills))
             # imagen adjunta (visión): arma el content multimodal formato OpenAI
             # ({"type":"image_url",...}); cada provider lo traduce si hace falta
             # (ver _msgs_to_anthropic). No se guarda en la memoria del turno para
@@ -1068,6 +1189,7 @@ class Api:
             MAX_AUTO_CONTINUATIONS = int(ag.get("max_continuations", 25) or 25)
             no_progress = 0            # tramos seguidos sin ningún avance → ahí sí paramos
             last_progress = (0, 0)     # (archivos escritos, herramientas ejecutadas)
+            verified_ok = False        # el turno terminó limpio (sin errores) → aprender habilidad
             while True:
                 hit_cap = False
                 for attempt in range(max_attempts):
@@ -1173,6 +1295,8 @@ class Api:
                         if rt:
                             s._push("sys", f"⚠ Quedó un error de ejecución sin resolver:\n{rt}")
                             s._reflect_and_learn(msg, f"dejaste código que compila pero falla al correr: {rt[:200]}")
+                        else:
+                            verified_ok = True   # sin errores de sintaxis ni de ejecución
                         break
                     asst = {"role": "assistant",
                             "content": msg_resp.get("content", ""), "tool_calls": tcs}
@@ -1294,6 +1418,14 @@ class Api:
                 n = len(s._checkpoint)
                 files_list = ", ".join(Path(p).name for p in s._checkpoint.keys())
                 s._push("sys", f"✍ Escribí {n} archivo(s): {files_list} · escribí /undo para revertir este turno")
+            # habilidad: aprender de un turno EXITOSO y no trivial (verificado sin
+            # errores + trabajo real: archivos escritos o varias herramientas usadas)
+            if verified_ok and not stalled_out and (len(dict.fromkeys(s._written)) or tool_runs >= 3):
+                try:
+                    resumen = f"Archivos: {', '.join(Path(p).name for p in dict.fromkeys(s._written)) or '—'}. {text[:300]}"
+                    s._learn_skill(msg, resumen)
+                except Exception as e:
+                    log(f"learn_skill (turno) fallo: {e}")
             # si el texto ya se mostró en vivo por streaming, no re-renderizar
             if getattr(s, "_live", False) and text:
                 return {"streamed": True, "full": text, "status": status}
@@ -1592,6 +1724,20 @@ class Api:
                                 "(/lecciones borrar para reiniciar)")
                 return msgs("🧠 Lecciones aprendidas (se le re-inyectan al agente):\n"
                             + "\n".join(f"• {x['txt']}" for x in ls[-20:]))
+            if cmd in ("habilidades", "skills"):
+                arg_s = arg.strip()
+                if arg_s in ("borrar", "clear", "reset", "olvidar"):
+                    try:
+                        s._skills_path().unlink()
+                    except OSError:
+                        pass
+                    return msgs("🧠 Habilidades borradas.")
+                sk = s._load_skills()
+                if not sk:
+                    return msgs("🧠 Todavía no aprendí habilidades — aparecen cuando resolvés "
+                                "bien una tarea reutilizable. (/habilidades borrar para reiniciar)")
+                return msgs("🧠 Habilidades aprendidas (se aplican cuando el pedido se parece):\n"
+                            + "\n".join(f"• {x['name']} — {x.get('when','')}" for x in sk[-25:]))
             if cmd == "git" and arg:
                 return msgs(s._exec_tool("git", {"args": arg}, "", "python"))
             if cmd == "commit":
