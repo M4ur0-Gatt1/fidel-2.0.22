@@ -84,6 +84,22 @@ header {
 }
 .dot { width: 7px; height: 7px; border-radius: 99px; background: var(--green); display: inline-block; flex: none; }
 .dot.off { background: var(--faint); }
+.pill-btn {
+  background: none; border: none; color: var(--mut); cursor: pointer; flex: none;
+  display: inline-flex; align-items: center; padding: 2px;
+}
+.pill-btn .ico { width: 13px; height: 13px; }
+.pill-btn:hover { color: var(--txt); }
+/* lista del buscador de modelos */
+.mlist { max-height: 46vh; overflow-y: auto; margin: 4px 0 12px; display: flex; flex-direction: column; gap: 2px; }
+.mrow {
+  padding: 7px 10px; border-radius: 7px; cursor: pointer; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap;
+  font: 400 12px 'JetBrains Mono', monospace; color: var(--mut);
+}
+.mrow:hover { background: var(--panel2); color: var(--txt); }
+.mrow.cur { color: var(--green); }
+.mrow.cur::before { content: "● "; }
 .search {
   display: flex; align-items: center; gap: 8px; background: transparent;
   border: 1px solid var(--line); border-radius: 9px; padding: 6px 12px;

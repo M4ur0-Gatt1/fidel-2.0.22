@@ -35,7 +35,7 @@ CODE_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".md", ".txt", ".json",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.3.0"
+FIDEL_VERSION = "2.4.0"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -524,6 +524,25 @@ class Api:
             return {"data_url": f"data:{mime};base64,{b64}", "name": p.name}
         except OSError as e:
             return {"error": str(e)}
+
+    def new_design(s):
+        """Crea un lienzo SVG inicial (con elementos editables) y devuelve su ruta,
+        para que el entorno de diseño abra con algo para tocar."""
+        starter = (
+            '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1080 1080" width="1080" height="1080">\n'
+            '  <rect x="0" y="0" width="1080" height="1080" fill="#0B0B0C"/>\n'
+            '  <rect x="90" y="90" width="900" height="900" rx="24" fill="#E5322D"/>\n'
+            '  <text x="540" y="560" font-family="Figtree" font-size="120" font-weight="800" '
+            'fill="#ffffff" text-anchor="middle">Tu diseño</text>\n'
+            '  <text x="540" y="660" font-family="Figtree" font-size="40" '
+            'fill="#ffffff" text-anchor="middle" opacity="0.85">editá cada elemento a la derecha</text>\n'
+            '</svg>\n')
+        d = s._base() / "disenos"
+        d.mkdir(parents=True, exist_ok=True)
+        fp = d / f"diseno_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.svg"
+        fp.write_text(starter, encoding="utf-8")
+        s._push("ws", {"ws": s.ws, "tree": s._tree(), "branch": s._git_branch()})
+        return {"path": str(fp), "name": fp.name}
 
     def set_zoom(s, z):
         s.cfg.data["zoom"] = z

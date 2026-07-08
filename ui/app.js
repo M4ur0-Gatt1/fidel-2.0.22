@@ -238,7 +238,8 @@ async function init() {
   restorePanelSizes();
   initSplitters();
   sysMsg("Fidel v" + (S.version || "?") + " — listo.\n" +
-         "⚙ API keys · 📁 proyecto · barra izquierda: 🧊 Artefactos (vista previa en vivo), " +
+         "⚙ API keys · 📁 proyecto · 🔎 junto al modelo: buscador entre todos los modelos de la API.\n" +
+         "barra izquierda: ✒ Diseño (editor de vectores SVG), 🧊 Artefactos (vista previa en vivo), " +
          "⟳ Rutinas, 🔧 Herramientas, 🖧 Servidores SSH, ⟲ Historial, ▦ Ranking.\n" +
          "El agente sabe git, ssh y scp: pedile «subí esto a github» o «entrá al server X y…».\n" +
          "Aprende solo: /habilidades y /lecciones (global) y /memoria (de este proyecto).\n" +
@@ -360,6 +361,8 @@ function bind() {
     sysMsg(`Proveedor → ${$("#selProv").value} · ${r.model}`);
   };
   $("#selModel").onchange = () => api.set_model($("#selModel").value);
+  $("#btnModelSearch").onclick = modalModelSearch;
+  $("#abDesign").onclick = designEntry;
   $("#btnKeys").onclick = modalKeys;
   $("#btnCmp").onclick = modalCompare;
   $("#btnWs").onclick = pickWs;
@@ -1273,6 +1276,42 @@ function modalKeys() {
 function openModal(html) { $("#modal").innerHTML = html; $("#overlay").hidden = false; }
 function closeModal() { $("#overlay").hidden = true; }
 
+/* ── buscador de modelos: filtra en vivo entre TODOS los del proveedor ── */
+function modalModelSearch() {
+  const opts = [...$("#selModel").options].map(o => o.value)
+    .filter(v => v && v !== "(configura la key)");
+  if (!opts.length) return sysMsg("No hay modelos para buscar — configurá la API key del proveedor (⚙).");
+  const cur = $("#selModel").value;
+  openModal(`<h2>Buscar modelo</h2>
+    <div class="sub">Proveedor: <b>${$("#selProv").value}</b> · ${opts.length} modelos disponibles</div>
+    <input id="mq" class="cmp-field" placeholder="Escribí para filtrar (ej: qwen, vl, deepseek, 32b)…" autocomplete="off" spellcheck="false">
+    <div id="mlist" class="mlist"></div>
+    <div class="m-actions"><button class="ghost" id="mCancel">Cerrar</button></div>`);
+  const render = (q) => {
+    q = (q || "").toLowerCase().trim();
+    const terms = q.split(/\s+/).filter(Boolean);
+    const list = $("#mlist"); list.innerHTML = "";
+    const filtered = opts.filter(v => terms.every(t => v.toLowerCase().includes(t)));
+    if (!filtered.length) { list.innerHTML = '<div class="sub">Sin coincidencias.</div>'; return; }
+    for (const v of filtered.slice(0, 300)) {
+      const el = document.createElement("div");
+      el.className = "mrow" + (v === cur ? " cur" : "");
+      el.textContent = v;
+      el.title = v;
+      el.onclick = () => {
+        $("#selModel").value = v; api.set_model(v); closeModal();
+        sysMsg("Modelo → " + v);
+      };
+      list.appendChild(el);
+    }
+    if (filtered.length > 300)
+      list.insertAdjacentHTML("beforeend", `<div class="sub">…y ${filtered.length - 300} más — afiná el filtro.</div>`);
+  };
+  render("");
+  const q = $("#mq"); q.oninput = () => render(q.value); q.focus();
+  $("#mCancel").onclick = closeModal;
+}
+
 /* ══ Artefactos: vista previa en vivo del HTML/web generado, DENTRO de Fidel ══ */
 function addArtifact(name, html, path) {
   S.artifacts = S.artifacts || [];
@@ -1328,6 +1367,20 @@ async function openDesign(path) {
   $("#designView").hidden = false;
 }
 function closeDesign() { $("#designView").hidden = true; DZ.sel = null; }
+
+/* botón "Diseño" de la barra: reabre el diseño actual, o crea un lienzo nuevo
+   para que se vean las herramientas aunque no haya un SVG abierto todavía */
+async function designEntry() {
+  if (DZ.path) { $("#designView").hidden = false; return; }
+  const r = await api.new_design();
+  if (r && r.error) return sysMsg("❌ " + r.error);
+  if (r && r.path) {
+    try { S.tree = (await api.refresh_tree()).tree; renderTree(); } catch (e) { /* */ }
+    await openDesign(r.path);
+    sysMsg("🎨 Lienzo nuevo: " + (r.name || "") + " — hacé clic en cualquier elemento para " +
+           "editarlo (relleno, tipografía, posición…). También podés pedirle al agente que dibuje un SVG.");
+  }
+}
 
 function dzOnCanvasClick(e) {
   const el = e.target;
