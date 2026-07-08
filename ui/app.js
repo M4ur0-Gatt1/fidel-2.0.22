@@ -111,6 +111,45 @@ window.Fidel = {
   },
 };
 
+/* ── rasterizar SVG → PNG dataURL (para que el modelo "vea" lo que dibujó) ──
+   Lo llama Python por evaluate_js y sondea window.__raster hasta que esté listo.
+   Sentinela: "PENDING" mientras carga, "data:..." si salió, "ERR:..." si falló.
+   Es async (decodificar la imagen), por eso el patrón de polling. */
+window.__raster = "IDLE";
+window.rasterizeSVG = function (svg, maxPx) {
+  window.__raster = "PENDING";
+  try {
+    // asegurar width/height (si solo hay viewBox, naturalWidth puede ser 0)
+    let s = svg;
+    if (!/<svg[^>]*\bwidth=/.test(s)) {
+      const vb = /viewBox\s*=\s*["']([\d.\-\s]+)["']/.exec(s);
+      if (vb) {
+        const p = vb[1].trim().split(/\s+/);
+        if (p.length === 4) s = s.replace(/<svg/, `<svg width="${p[2]}" height="${p[3]}"`);
+      }
+    }
+    const blob = new Blob([s], { type: "image/svg+xml;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const img = new Image();
+    img.onload = function () {
+      try {
+        const w = img.naturalWidth || 512, h = img.naturalHeight || 512;
+        const cap = maxPx || 1024;
+        const scale = Math.min(1, cap / Math.max(w, h));
+        const cw = Math.max(1, Math.round(w * scale)), ch = Math.max(1, Math.round(h * scale));
+        const c = document.createElement("canvas"); c.width = cw; c.height = ch;
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, cw, ch);   // fondo blanco
+        ctx.drawImage(img, 0, 0, cw, ch);
+        window.__raster = c.toDataURL("image/png");
+      } catch (e) { window.__raster = "ERR:" + e.message; }
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = function () { window.__raster = "ERR:no pude cargar el SVG"; URL.revokeObjectURL(url); };
+    img.src = url;
+  } catch (e) { window.__raster = "ERR:" + e.message; }
+};
+
 /* ── menú contextual del chat (copiar) ──
    pywebview apaga el menú nativo del navegador salvo --debug (para no exponer
    "Inspeccionar" a usuarios finales), y con eso también se llevó puesto el
@@ -1169,6 +1208,8 @@ function modalKeys() {
       <input id="agMem" type="number" min="1" spellcheck="false"></div>
     <div class="agrow"><label>Verificar ejecución</label>
       <label class="agchk"><input id="agVerify" type="checkbox"> corre el código y, si falla en runtime, pide corrección (no solo que compile)</label></div>
+    <div class="agrow"><label>Revisar diseño (SVG)</label>
+      <label class="agchk"><input id="agDesign" type="checkbox"> rasteriza el SVG y lo revisa con visión para que no dibuje a ciegas</label></div>
     <div class="m-actions">
       <button class="ghost" id="mCancel">Cancelar</button>
       <button class="primary" id="mSave">Guardar</button>
@@ -1180,13 +1221,14 @@ function modalKeys() {
   $("#agConts").value = S.agent.max_continuations ?? 25;
   $("#agMem").value = S.agent.memory_turns ?? 24;
   $("#agVerify").checked = S.agent.verify_runtime !== false;   // default: activado
+  $("#agDesign").checked = S.agent.verify_design !== false;    // default: activado
   $("#mCancel").onclick = closeModal;
   $("#mSave").onclick = async () => {
     const keys = {};
     document.querySelectorAll('#modal input[type="password"]').forEach(i => { keys[i.dataset.p] = i.value.trim(); });
     S.sysPrompt = $("#sysP").value.trim();
     await api.save_system_prompt(S.sysPrompt);
-    S.agent = await api.save_agent_config($("#agSteps").value, $("#agConts").value, $("#agMem").value, $("#agVerify").checked);
+    S.agent = await api.save_agent_config($("#agSteps").value, $("#agConts").value, $("#agMem").value, $("#agVerify").checked, $("#agDesign").checked);
     const st = await api.save_keys(keys);
     S.providers = st.providers;
     updApis(st);

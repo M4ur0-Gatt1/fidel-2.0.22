@@ -35,7 +35,7 @@ CODE_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".md", ".txt", ".json",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.1.0"
+FIDEL_VERSION = "2.2.0"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -46,7 +46,7 @@ DEFAULT_EXPECTED = "2, 3, 5, 7, 11, 13, 17, 19, 23, 29"
 # ningún filtro ni instrucción oculta más allá de esto.
 DEFAULT_SP = ("Eres Fidel, programador senior. Tienes HERRAMIENTAS: read_file, "
               "write_file, edit_file, exec_cmd, run_code, list_files, search_code, "
-              "git, ssh_exec, scp_upload, generate_image, remember. Usalas y ACTUA directo, sin pedir permiso. "
+              "git, ssh_exec, scp_upload, generate_image, remember, check_design. Usalas y ACTUA directo, sin pedir permiso. "
               "Cuando descubras un hecho DURABLE de este proyecto (stack y versiones, "
               "comandos de build/test/deploy, servidores y rutas, convenciones, "
               "decisiones) guardalo con remember — así lo recordás en próximas sesiones. "
@@ -57,8 +57,12 @@ DEFAULT_SP = ("Eres Fidel, programador senior. Tienes HERRAMIENTAS: read_file, "
               "(requiere key de OpenAI o SiliconFlow cargada en Configuracion). "
               "Para logos, iconos, diagramas o cualquier DISENO editable, escribi un "
               ".svg con write_file: se abre solo en el entorno de diseno de Fidel, donde "
-              "el usuario selecciona y edita cada elemento. Usa SVG limpio: un elemento "
-              "por forma/texto, con fill/stroke/font-family explicitos. "
+              "el usuario selecciona y edita cada elemento. Usa SVG limpio: viewBox "
+              "explicito y TODO dentro de el; un elemento por forma/texto con "
+              "fill/stroke/font-family explicitos; alinea y espacia prolijo; para texto "
+              "usa text-anchor y evita que se desborde o se corte. NO dibujes a ciegas: "
+              "despues de escribir un SVG usa check_design para VERLO (lo rasteriza y lo "
+              "revisa un modelo de vision) y corregi segun la devolucion antes de darlo por listo. "
               "Antes de editar un proyecto grande, usa search_code para ubicar lo que "
               "buscas. Para modificar un archivo QUE YA EXISTE preferi edit_file "
               "(reemplaza solo el fragmento exacto que cambia) — es mas confiable y "
@@ -444,7 +448,7 @@ class Api:
         s.cfg.data["system_prompt"] = (text or "").strip()
         s.cfg.save()
 
-    def save_agent_config(s, steps, conts, mem, verify_runtime=None):
+    def save_agent_config(s, steps, conts, mem, verify_runtime=None, verify_design=None):
         """Guarda los límites del agente (⚙). Fidel no le pone techo al trabajo
         salvo el que elijas acá y el de la API."""
         a = s.cfg.data.setdefault("agent", {})
@@ -459,6 +463,8 @@ class Api:
         a["memory_turns"] = _int(mem, 24)
         if verify_runtime is not None:
             a["verify_runtime"] = bool(verify_runtime)
+        if verify_design is not None:
+            a["verify_design"] = bool(verify_design)
         s.cfg.save()
         return a
 
@@ -848,6 +854,7 @@ class Api:
             {"type": "function", "function": {"name": "scp_upload", "description": "Sube un archivo o carpeta local a un servidor remoto por scp. 'host' = alias guardado o usuario@ip.", "parameters": {"type": "object", "properties": {"host": {"type": "string"}, "local": {"type": "string", "description": "ruta local (relativa al workspace o absoluta)"}, "remote": {"type": "string", "description": "ruta destino en el servidor"}}, "required": ["host", "local", "remote"]}}},
             {"type": "function", "function": {"name": "generate_image", "description": "Genera una imagen a partir de una descripcion (DALL-E de OpenAI, o SiliconFlow si no hay key de OpenAI) y la guarda en el workspace. Requiere API key de OpenAI o SiliconFlow cargada en Configuracion.", "parameters": {"type": "object", "properties": {"prompt": {"type": "string", "description": "descripcion de la imagen a generar, en ingles da mejor resultado"}, "path": {"type": "string", "description": "ruta donde guardarla dentro del workspace, ej assets/logo.png. Si se omite usa assets/img_<fecha>.png"}, "size": {"type": "string", "description": "tamano, ej 1024x1024 (default) — no todos los tamanos existen en todos los proveedores"}}, "required": ["prompt"]}}},
             {"type": "function", "function": {"name": "remember", "description": "Guarda un HECHO DURABLE de ESTE proyecto en la memoria del workspace (.fidel/memoria.md) para tenerlo en futuras sesiones: stack y versiones, comandos de build/test/deploy, servidores y rutas, convenciones de código, decisiones tomadas. Usalo cuando descubras algo del proyecto que valga la pena recordar. NO lo uses para cosas triviales o de un solo uso.", "parameters": {"type": "object", "properties": {"note": {"type": "string", "description": "el hecho a recordar, en una frase concreta"}}, "required": ["note"]}}},
+            {"type": "function", "function": {"name": "check_design", "description": "VE un archivo .svg: lo rasteriza y lo revisa con un modelo de visión, devolviendo qué está visualmente mal o mejorable (proporciones, alineación, elementos fuera del lienzo, texto desbordado, colores). Usalo DESPUÉS de escribir un SVG para no dibujar a ciegas — corregí según la devolución y volvé a chequear.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "ruta al .svg a revisar"}}, "required": ["path"]}}},
         ]
 
     def _exec_tool(s, name, args, code, lang):
@@ -1028,6 +1035,30 @@ class Api:
                 return f"✅ Imagen generada con {used} → {rel}"
             if name == "remember":
                 return s._remember(args.get("note") or args.get("text") or "")
+            if name == "check_design":
+                rel = s._arg_path(args)
+                if not rel:
+                    return "❌ Falta 'path' al .svg a revisar"
+                p = Path(rel) if os.path.isabs(rel) else s._base() / rel
+                if not p.exists():
+                    return f"❌ No existe: {rel}"
+                struct = s._check_svg(str(p))
+                try:
+                    svg = p.read_text(encoding="utf-8", errors="replace")
+                except OSError as e:
+                    return f"❌ {e}"
+                visual = s._critique_design(svg, "revisión de diseño")
+                if not struct and not visual:
+                    return "✅ El diseño se ve bien (estructura válida y sin problemas visuales evidentes)."
+                out = []
+                if struct:
+                    out.append("⚠ Estructura: " + struct)
+                if visual:
+                    out.append("👁 Revisión visual:\n" + visual)
+                else:
+                    out.append("(no había un modelo de visión disponible para la revisión visual)"
+                               if not s._vision_target()[0] else "")
+                return "\n".join(x for x in out if x)
         except Exception as e:
             return f"❌ {e}"
 
@@ -1179,6 +1210,133 @@ class Api:
         tail = "\n".join(err.splitlines()[-12:])
         return f"{base} falla al ejecutarse:\n{tail}"
 
+    # ── Vectores: que el modelo VEA lo que dibujó y se autocorrija ──────
+    # El límite real de la IA con vectores es que genera SVG a ciegas. Acá lo
+    # rasterizamos (vía el propio webview), se lo mostramos a un modelo de visión
+    # y devolvemos una crítica accionable para que corrija.
+    def _rasterize_svg(s, svg):
+        """SVG → PNG dataURL usando el motor del webview. Devuelve (dataurl, error)."""
+        if not s._window:
+            return None, "sin ventana"
+        try:
+            s._window.evaluate_js("window.rasterizeSVG(" + json.dumps(svg) + ")")
+        except Exception as e:
+            return None, str(e)
+        for _ in range(60):                     # hasta ~6s
+            time.sleep(0.1)
+            try:
+                r = s._window.evaluate_js("window.__raster")
+            except Exception:
+                r = None
+            if not r or r == "PENDING":
+                continue
+            if isinstance(r, str) and r.startswith("ERR:"):
+                return None, r[4:]
+            if isinstance(r, str) and r.startswith("data:image"):
+                return r, None
+        return None, "timeout rasterizando el SVG"
+
+    def _check_svg(s, path):
+        """Validación estructural barata del SVG (antes de gastar en visión):
+        XML válido, tiene viewBox o width/height, sin NaN en el path data."""
+        try:
+            import xml.dom.minidom as minidom
+            src = Path(path).read_text(encoding="utf-8", errors="replace")
+        except (OSError, ValueError):
+            return ""
+        issues = []
+        try:
+            minidom.parseString(src)
+        except Exception as e:
+            return f"SVG mal formado (XML inválido): {e}"
+        if "viewBox" not in src and not re.search(r"<svg[^>]*\bwidth=", src):
+            issues.append("falta viewBox (o width/height) en <svg> — el lienzo queda indefinido")
+        if re.search(r"[dxy]=\"[^\"]*\bNaN\b", src):
+            issues.append("hay 'NaN' en coordenadas — algún cálculo falló")
+        return "; ".join(issues)
+
+    def _vision_target(s):
+        """Elige (provider_obj, etiqueta) con capacidad de visión para criticar.
+        Config opcional agent.design_critic = 'provider/modelo'. Si no hay ninguno
+        con visión, devuelve (None, motivo)."""
+        crit = (s.cfg.data.get("agent", {}).get("design_critic") or "").strip()
+        if crit and "/" in crit:
+            pv, _, md = crit.partition("/")
+            try:
+                return s._mk_provider(pv.strip(), md.strip()), crit
+            except Exception:
+                pass
+        provs = s.cfg.data.get("providers", {})
+        # candidatos conocidos con visión, por preferencia
+        cands = [
+            ("openai", "gpt-4o"),
+            ("siliconflow", "Qwen/Qwen3-VL-8B-Instruct"),
+            ("anthropic", "claude-sonnet-4-5"),
+            ("qwen", "qwen-vl-plus"),
+        ]
+        for pv, md in cands:
+            if provs.get(pv, {}).get("api_key"):
+                try:
+                    return s._mk_provider(pv, md), f"{pv}/{md}"
+                except Exception:
+                    continue
+        return None, "no hay proveedor con visión configurado (OpenAI, SiliconFlow, Anthropic o Qwen)"
+
+    def _critique_design(s, svg, request):
+        """Rasteriza el SVG, se lo muestra a un modelo de visión y devuelve una
+        crítica accionable (o '' si está bien / no se puede criticar)."""
+        prov, tag = s._vision_target()
+        if not prov:
+            return ""
+        png, err = s._rasterize_svg(svg)
+        if err or not png:
+            log(f"rasterize falló: {err}")
+            return ""
+        try:
+            content = [
+                {"type": "text", "text":
+                 "Sos un director de arte. Esta imagen es el render de un SVG generado para: "
+                 f"«{(request or 'un diseño')[:300]}». Decí en 2 a 4 viñetas CONCRETAS qué está "
+                 "visualmente MAL o mejorable: proporciones, alineación, elementos fuera del "
+                 "lienzo o cortados, texto ilegible/desbordado, solapamientos no intencionales, "
+                 "colores/contraste, espaciado. Si está correcto y prolijo, respondé exactamente OK."},
+                {"type": "image_url", "image_url": {"url": png}},
+            ]
+            r = prov.chat([{"role": "user", "content": content}],
+                          system_prompt="Respondés con viñetas breves y accionables, o 'OK'.",
+                          temperature=0.2, max_tokens=300)
+            out = re.sub(r"<think>.*?</think>", "", r.content or "", flags=re.DOTALL).strip()
+            if not out or out.strip().upper().startswith("OK"):
+                return ""
+            return out
+        except Exception as e:
+            log(f"critique_design falló ({tag}): {e}")
+            return ""
+
+    def _check_design_written(s, request):
+        """Crítica visual de los .svg escritos este turno (auto-verificación).
+        Desactivable con agent.verify_design=false."""
+        if not s.cfg.data.get("agent", {}).get("verify_design", True):
+            return ""
+        svgs = [p for p in dict.fromkeys(s._written) if p.lower().endswith(".svg")]
+        if not svgs:
+            return ""
+        p = svgs[-1]                            # el último diseño tocado
+        base = os.path.basename(p)
+        struct = s._check_svg(p)
+        try:
+            svg = Path(p).read_text(encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+        s._push("sys", f"👁 Mirando {base} para revisar el diseño…")
+        visual = s._critique_design(svg, request)
+        parts = []
+        if struct:
+            parts.append("Estructura: " + struct)
+        if visual:
+            parts.append("Revisión visual:\n" + visual)
+        return (f"{base}:\n" + "\n".join(parts)) if parts else ""
+
     def _run_model(s, ms, sp, temperature, max_tok, use_tools):
         """Llama al modelo con STREAMING real: empuja content y reasoning
         ('pensamiento') a la UI a medida que llegan. Devuelve el AIResponse final.
@@ -1267,6 +1425,7 @@ class Api:
             flubs = 0
             fixes = 0
             rt_fixes = 0      # correcciones pedidas por errores de EJECUCIÓN (runtime)
+            design_fixes = 0  # correcciones pedidas por la revisión visual de un .svg
             max_tok = 8192   # se ajusta solo (413 lo baja, archivo cortado lo sube)
             seen_calls = {}   # (tool, args) -> veces repetida en este turno → detectar bucles
             stall = 0         # llamadas repetidas seguidas sin avance
@@ -1396,8 +1555,21 @@ class Api:
                         if rt:
                             s._push("sys", f"⚠ Quedó un error de ejecución sin resolver:\n{rt}")
                             s._reflect_and_learn(msg, f"dejaste código que compila pero falla al correr: {rt[:200]}")
-                        else:
-                            verified_ok = True   # sin errores de sintaxis ni de ejecución
+                            break
+                        # VECTORES: si escribió un .svg, que el modelo lo VEA (render +
+                        # crítica visual) y lo corrija — el agente no dibuja a ciegas.
+                        dz = s._check_design_written(msg)
+                        if dz and use_tools and design_fixes < 1:
+                            design_fixes += 1
+                            s._push("sys", "👁 Revisé el diseño y hay cosas para mejorar — pidiendo ajuste…")
+                            ms.append({"role": "assistant", "content": text})
+                            ms.append({"role": "user", "content":
+                                       "Rendericé el SVG y lo revisé visualmente. Observaciones:\n" + dz +
+                                       "\nAjustá el SVG con edit_file para resolver eso (mantené todo dentro "
+                                       "del viewBox, alineado y legible). Confirmá en una línea."})
+                            text = ""
+                            continue
+                        verified_ok = True   # sin errores de sintaxis, ejecución ni diseño pendiente
                         break
                     asst = {"role": "assistant",
                             "content": msg_resp.get("content", ""), "tool_calls": tcs}
