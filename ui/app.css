@@ -179,6 +179,11 @@ header {
 .CodeMirror-cursor { border-left: 2px solid var(--red); }
 .CodeMirror-selected { background: var(--panel2) !important; }
 .CodeMirror-activeline-background { background: var(--line2); }
+/* resaltado en vivo de las líneas que acaba de editar el agente (se desvanece) */
+.cm-edited { background: var(--greensoft); animation: cm-edit-flash 2.2s ease-out; }
+@keyframes cm-edit-flash {
+  0% { background: rgba(46,160,67,.38); } 100% { background: var(--greensoft); }
+}
 .cm-s-default .cm-keyword { color: var(--code-kw); }
 .cm-s-default .cm-string, .cm-s-default .cm-string-2 { color: var(--code-str); }
 .cm-s-default .cm-comment { color: var(--code-com); }
@@ -288,6 +293,14 @@ header {
 }
 .m-user-img { display: block; max-width: 220px; max-height: 220px; border-radius: 8px; }
 .m-user-img + div { margin-top: 7px; }
+/* miniatura de imagen generada/abierta por el agente, en el chat */
+.m-img { align-self: flex-start; max-width: 85%; }
+.m-img img {
+  display: block; max-width: 240px; max-height: 240px; border-radius: 10px;
+  border: 1px solid var(--line); cursor: pointer; transition: transform .1s;
+}
+.m-img img:hover { transform: scale(1.02); }
+.m-img-cap { font-size: 11px; color: var(--mut); margin-top: 4px; }
 .m-agent { display: flex; flex-direction: column; gap: 8px; max-width: 95%; }
 .m-head { display: flex; align-items: center; gap: 7px; }
 .m-ava {

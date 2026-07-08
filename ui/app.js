@@ -68,7 +68,7 @@ window.Fidel = {
       if (m.event === "status") setStatus(m.data);
       if (m.event === "sys") { sysMsg(m.data); persist("system", m.data); }
       if (m.event === "ws") setWs(m.data);
-      if (m.event === "wrote") onWrote(m.data.path);
+      if (m.event === "wrote") onWrote(m.data.path, m.data.range);
       if (m.event === "think_start") { stopThinking(); setStatus("💭 Razonando…"); planDone(); S.thinkEl = thinkMsg(); }
       if (m.event === "think_delta" && S.thinkEl) { S.thinkEl.querySelector(".think-body").textContent += m.data; scrollMsgs(); }
       if (m.event === "think_end" && S.thinkEl) {
@@ -192,11 +192,18 @@ function setWs(d) {
   sysMsg("📁 Workspace: " + d.ws);
 }
 
-async function onWrote(path) {
+const IMG_RE = /\.(png|jpe?g|gif|webp|bmp|svg)$/i;
+
+async function onWrote(path, range) {
   const r = await api.refresh_tree();
   S.tree = r.tree;
   renderTree();
-  openFile(path);   // mostrar lo que generó el agente en el editor
+  if (IMG_RE.test(path)) {
+    // imagen generada por el agente → verla en el visor + miniatura en el chat
+    await openImage(path, true);
+    return;
+  }
+  await openFile(path, range);   // mostrar lo que editó, resaltando el cambio en vivo
   // si el agente generó una página web, registrarla como artefacto y mostrarla en vivo
   if (/\.html?$/i.test(path)) {
     const a = await api.artifact_content(path);
@@ -473,10 +480,51 @@ async function pickWs() {
   sysMsg("📁 Workspace: " + r.ws); persist("system", "📁 Workspace: " + r.ws);
 }
 
-async function openFile(path) {
+async function openFile(path, range) {
+  if (IMG_RE.test(path)) return openImage(path);   // imágenes → visor, no al editor
   const r = await api.open_file(path);
   if (r.error) return sysMsg("❌ " + r.error);
+  const existed = S.tabs.find(t => t.id === r.path);
   addTab(r.path, r.name, r.content, r.lang);
+  // si el tab ya existía, su doc quedó desactualizado: refrescar con lo nuevo
+  if (existed && existed.doc.getValue() !== r.content) {
+    S.loading = true; existed.doc.setValue(r.content); S.loading = false;
+  }
+  if (range) highlightRange(range[0], range[1]);
+}
+
+/* resalta en vivo el rango de líneas que acaba de tocar el agente y hace scroll */
+function highlightRange(start, end) {
+  try {
+    cm.operation(() => {
+      for (let ln = start; ln <= end && ln < cm.lineCount(); ln++)
+        cm.addLineClass(ln, "background", "cm-edited");
+    });
+    cm.scrollIntoView({ line: start, ch: 0 }, 120);
+    cm.setCursor({ line: start, ch: 0 });
+    setTimeout(() => cm.operation(() => {
+      for (let ln = start; ln <= end && ln < cm.lineCount(); ln++)
+        cm.removeLineClass(ln, "background", "cm-edited");
+    }), 2200);
+  } catch (e) { /* fuera de rango: sin drama */ }
+}
+
+/* ── visor de imágenes / SVG dentro de Fidel (reusa el panel de artefactos) ── */
+async function openImage(path, alsoChat) {
+  const r = await api.image_data(path);
+  if (!r || r.error) return sysMsg("❌ No pude abrir la imagen: " + ((r && r.error) || path));
+  const name = r.name || path.split(/[\\/]/).pop();
+  // renderizar centrada sobre fondo tipo lienzo, con la imagen escalada al panel
+  const html = '<body style="margin:0;height:100vh;display:flex;align-items:center;' +
+    'justify-content:center;background:#141416;background-image:' +
+    'linear-gradient(45deg,#1c1c1f 25%,transparent 25%),linear-gradient(-45deg,#1c1c1f 25%,transparent 25%),' +
+    'linear-gradient(45deg,transparent 75%,#1c1c1f 75%),linear-gradient(-45deg,transparent 75%,#1c1c1f 75%);' +
+    'background-size:20px 20px;background-position:0 0,0 10px,10px -10px,-10px 0">' +
+    '<img src="' + r.data_url + '" style="max-width:100%;max-height:100vh;object-fit:contain;' +
+    'box-shadow:0 4px 30px rgba(0,0,0,.5)"></body>';
+  addArtifact(name, html, path);
+  showArtifacts();
+  if (alsoChat) chatImage(r.data_url, name);
 }
 
 async function openDialog() {
@@ -619,6 +667,24 @@ function clearAttachedImage() {
   S.attachedImage = null;
   $("#imgPreview").hidden = true;
   $("#imgPreviewThumb").src = "";
+}
+
+/* miniatura clickeable en el chat de una imagen que generó/abrió el agente */
+function chatImage(dataUrl, name) {
+  const d = document.createElement("div");
+  d.className = "m-img";
+  const img = document.createElement("img");
+  img.src = dataUrl; img.title = name + " — clic para verla en grande";
+  img.onclick = () => { addArtifact(name, imgHtml(dataUrl), name); showArtifacts(); };
+  const cap = document.createElement("div");
+  cap.className = "m-img-cap"; cap.textContent = "🖼 " + name;
+  d.appendChild(img); d.appendChild(cap);
+  $("#msgs").appendChild(d); scrollMsgs();
+}
+function imgHtml(dataUrl) {
+  return '<body style="margin:0;height:100vh;display:flex;align-items:center;' +
+    'justify-content:center;background:#141416"><img src="' + dataUrl +
+    '" style="max-width:100%;max-height:100vh;object-fit:contain"></body>';
 }
 
 function agentMsg(text) {

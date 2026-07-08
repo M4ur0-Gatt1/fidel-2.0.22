@@ -35,7 +35,7 @@ CODE_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".md", ".txt", ".json",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.0.29"
+FIDEL_VERSION = "2.0.30"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -494,6 +494,23 @@ class Api:
         except OSError as e:
             return {"error": str(e)}
 
+    def image_data(s, path):
+        """Imagen (o SVG) como data URL, para verla DENTRO de Fidel sin romper el
+        editor de código con bytes binarios."""
+        p = Path(path)
+        ext = p.suffix.lower()
+        try:
+            if ext == ".svg":
+                svg = p.read_text(encoding="utf-8", errors="replace")
+                b64 = base64.b64encode(svg.encode("utf-8")).decode("ascii")
+                return {"data_url": f"data:image/svg+xml;base64,{b64}",
+                        "name": p.name, "svg": svg}
+            mime = s.IMG_MIME.get(ext, "application/octet-stream")
+            b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+            return {"data_url": f"data:{mime};base64,{b64}", "name": p.name}
+        except OSError as e:
+            return {"error": str(e)}
+
     def set_zoom(s, z):
         s.cfg.data["zoom"] = z
         s.cfg.save()
@@ -906,9 +923,14 @@ class Api:
                 key = str(p)
                 if key not in s._checkpoint:
                     s._checkpoint[key] = src
-                p.write_text(src.replace(old, new, 1), encoding="utf-8")
+                new_src = src.replace(old, new, 1)
+                p.write_text(new_src, encoding="utf-8")
                 s._written.append(str(p))
-                s._push("wrote", {"path": str(p)})
+                # rango de líneas cambiado → el frontend lo abre, hace scroll y lo
+                # resalta en vivo, para VER dónde tocó el agente
+                start = src[:src.find(old)].count("\n")          # 0-based
+                end = start + new.count("\n")
+                s._push("wrote", {"path": str(p), "range": [start, end]})
                 return f"✅ Editado ({len(new)}c)"
             if name == "exec_cmd":
                 cmd = args.get("command") or args.get("cmd") or ""
