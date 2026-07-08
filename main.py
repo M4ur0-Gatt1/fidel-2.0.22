@@ -35,7 +35,7 @@ CODE_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".md", ".txt", ".json",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.2.0"
+FIDEL_VERSION = "2.3.0"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -46,7 +46,7 @@ DEFAULT_EXPECTED = "2, 3, 5, 7, 11, 13, 17, 19, 23, 29"
 # ningún filtro ni instrucción oculta más allá de esto.
 DEFAULT_SP = ("Eres Fidel, programador senior. Tienes HERRAMIENTAS: read_file, "
               "write_file, edit_file, exec_cmd, run_code, list_files, search_code, "
-              "git, ssh_exec, scp_upload, generate_image, remember, check_design. Usalas y ACTUA directo, sin pedir permiso. "
+              "git, ssh_exec, scp_upload, generate_image, remember, check_design, social_export. Usalas y ACTUA directo, sin pedir permiso. "
               "Cuando descubras un hecho DURABLE de este proyecto (stack y versiones, "
               "comandos de build/test/deploy, servidores y rutas, convenciones, "
               "decisiones) guardalo con remember — así lo recordás en próximas sesiones. "
@@ -63,6 +63,10 @@ DEFAULT_SP = ("Eres Fidel, programador senior. Tienes HERRAMIENTAS: read_file, "
               "usa text-anchor y evita que se desborde o se corte. NO dibujes a ciegas: "
               "despues de escribir un SVG usa check_design para VERLO (lo rasteriza y lo "
               "revisa un modelo de vision) y corregi segun la devolucion antes de darlo por listo. "
+              "Para un POSTEO de redes sociales: 1) crea/consegui la imagen o diseno base; "
+              "2) usa social_export para generarla en el tamano exacto de cada red pedida; "
+              "3) escribi el copy y los hashtags adaptados a CADA plataforma (tono y largo) "
+              "en social/post.md. No inventes medidas: social_export ya usa las correctas. "
               "Antes de editar un proyecto grande, usa search_code para ubicar lo que "
               "buscas. Para modificar un archivo QUE YA EXISTE preferi edit_file "
               "(reemplaza solo el fragmento exacto que cambia) — es mas confiable y "
@@ -855,6 +859,7 @@ class Api:
             {"type": "function", "function": {"name": "generate_image", "description": "Genera una imagen a partir de una descripcion (DALL-E de OpenAI, o SiliconFlow si no hay key de OpenAI) y la guarda en el workspace. Requiere API key de OpenAI o SiliconFlow cargada en Configuracion.", "parameters": {"type": "object", "properties": {"prompt": {"type": "string", "description": "descripcion de la imagen a generar, en ingles da mejor resultado"}, "path": {"type": "string", "description": "ruta donde guardarla dentro del workspace, ej assets/logo.png. Si se omite usa assets/img_<fecha>.png"}, "size": {"type": "string", "description": "tamano, ej 1024x1024 (default) — no todos los tamanos existen en todos los proveedores"}}, "required": ["prompt"]}}},
             {"type": "function", "function": {"name": "remember", "description": "Guarda un HECHO DURABLE de ESTE proyecto en la memoria del workspace (.fidel/memoria.md) para tenerlo en futuras sesiones: stack y versiones, comandos de build/test/deploy, servidores y rutas, convenciones de código, decisiones tomadas. Usalo cuando descubras algo del proyecto que valga la pena recordar. NO lo uses para cosas triviales o de un solo uso.", "parameters": {"type": "object", "properties": {"note": {"type": "string", "description": "el hecho a recordar, en una frase concreta"}}, "required": ["note"]}}},
             {"type": "function", "function": {"name": "check_design", "description": "VE un archivo .svg: lo rasteriza y lo revisa con un modelo de visión, devolviendo qué está visualmente mal o mejorable (proporciones, alineación, elementos fuera del lienzo, texto desbordado, colores). Usalo DESPUÉS de escribir un SVG para no dibujar a ciegas — corregí según la devolución y volvé a chequear.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "ruta al .svg a revisar"}}, "required": ["path"]}}},
+            {"type": "function", "function": {"name": "social_export", "description": "Genera versiones de una imagen/diseño (png/jpg/svg) en el TAMAÑO EXACTO de cada red social, con recorte centrado, y las guarda en social/. Plataformas: instagram_post (1080x1080), instagram_story (1080x1920), facebook_post (1200x630), x_post (1600x900), linkedin_post (1200x627), tiktok, youtube_thumbnail, pinterest, whatsapp_status; o alias instagram/facebook/x/linkedin/youtube; o 'all'. El COPY y los hashtags escribilos vos aparte en social/post.md.", "parameters": {"type": "object", "properties": {"image": {"type": "string", "description": "ruta a la imagen/diseño fuente"}, "platforms": {"type": "array", "items": {"type": "string"}, "description": "lista de plataformas o formatos; default ['all']"}}, "required": ["image"]}}},
         ]
 
     def _exec_tool(s, name, args, code, lang):
@@ -1035,6 +1040,42 @@ class Api:
                 return f"✅ Imagen generada con {used} → {rel}"
             if name == "remember":
                 return s._remember(args.get("note") or args.get("text") or "")
+            if name == "social_export":
+                rel = args.get("image") or s._arg_path(args)
+                if not rel:
+                    return "❌ Falta 'image' (ruta a la imagen/diseño fuente)"
+                src = Path(rel) if os.path.isabs(rel) else s._base() / rel
+                if not src.exists():
+                    return f"❌ No existe: {rel}"
+                data_url, err = s._source_dataurl(str(src))
+                if err or not data_url:
+                    return f"❌ No pude leer la fuente: {err}"
+                fmts = s._resolve_platforms(args.get("platforms"))
+                outdir = s._base() / "social" / src.stem
+                outdir.mkdir(parents=True, exist_ok=True)
+                done, fail, first = [], [], None
+                for fmt in fmts:
+                    w, h = s.SOCIAL_SIZES[fmt]
+                    png, e = s._fit_image(data_url, w, h)
+                    if e or not png:
+                        fail.append(f"{fmt} ({e})")
+                        continue
+                    b64 = png.split(",", 1)[1]
+                    fp = outdir / f"{fmt}_{w}x{h}.png"
+                    fp.write_bytes(base64.b64decode(b64))
+                    s._written.append(str(fp))
+                    first = first or str(fp)
+                    done.append(f"{fmt} {w}x{h}")
+                # abrir la primera imagen generada (una ruta de archivo, NO la carpeta:
+                # el frontend rutea archivos al visor; una carpeta daría error)
+                if first:
+                    s._push("wrote", {"path": first})
+                rel_out = outdir.relative_to(s._base()) if str(outdir).startswith(str(s._base())) else outdir
+                msg = f"✅ {len(done)} imagen(es) en {rel_out}/:\n  " + "\n  ".join(done)
+                if fail:
+                    msg += "\n⚠ fallaron: " + ", ".join(fail)
+                msg += "\nAcordate de escribir el copy + hashtags por plataforma en social/post.md"
+                return msg
             if name == "check_design":
                 rel = s._arg_path(args)
                 if not rel:
@@ -1235,6 +1276,80 @@ class Api:
             if isinstance(r, str) and r.startswith("data:image"):
                 return r, None
         return None, "timeout rasterizando el SVG"
+
+    # ── Redes sociales: preparar el paquete de posteo (sin APIs) ──────
+    # Tamaños canónicos por plataforma/formato (px). El agente escribe el copy;
+    # esto se encarga de dejar la imagen en la medida exacta de cada red.
+    SOCIAL_SIZES = {
+        "instagram_post": (1080, 1080), "instagram_portrait": (1080, 1350),
+        "instagram_story": (1080, 1920), "instagram_reel": (1080, 1920),
+        "facebook_post": (1200, 630), "facebook_story": (1080, 1920),
+        "x_post": (1600, 900), "twitter": (1600, 900),
+        "linkedin_post": (1200, 627), "tiktok": (1080, 1920),
+        "youtube_thumbnail": (1280, 720), "pinterest": (1000, 1500),
+        "whatsapp_status": (1080, 1920),
+    }
+    SOCIAL_ALIASES = {
+        "instagram": ["instagram_post", "instagram_story"],
+        "facebook": ["facebook_post"], "x": ["x_post"],
+        "linkedin": ["linkedin_post"], "youtube": ["youtube_thumbnail"],
+        "all": ["instagram_post", "instagram_story", "facebook_post",
+                "x_post", "linkedin_post"],
+    }
+
+    def _fit_image(s, data_url, w, h):
+        """Redimensiona/recorta (cover) una imagen a w×h usando el canvas del
+        webview. Devuelve (png_dataurl, error)."""
+        if not s._window:
+            return None, "sin ventana"
+        try:
+            s._window.evaluate_js(
+                "window.fitImage(%s,%d,%d)" % (json.dumps(data_url), int(w), int(h)))
+        except Exception as e:
+            return None, str(e)
+        for _ in range(60):
+            time.sleep(0.1)
+            try:
+                r = s._window.evaluate_js("window.__fit")
+            except Exception:
+                r = None
+            if not r or r == "PENDING":
+                continue
+            if isinstance(r, str) and r.startswith("ERR:"):
+                return None, r[4:]
+            if isinstance(r, str) and r.startswith("data:image"):
+                return r, None
+        return None, "timeout redimensionando"
+
+    def _source_dataurl(s, path):
+        """Data URL PNG de la fuente: si es SVG lo rasteriza; si es raster lo
+        codifica directo. Devuelve (dataurl, error)."""
+        p = Path(path)
+        ext = p.suffix.lower()
+        try:
+            if ext == ".svg":
+                return s._rasterize_svg(p.read_text(encoding="utf-8", errors="replace"))
+            mime = s.IMG_MIME.get(ext)
+            if not mime:
+                return None, f"formato no soportado: {ext}"
+            b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+            return f"data:{mime};base64,{b64}", None
+        except OSError as e:
+            return None, str(e)
+
+    def _resolve_platforms(s, platforms):
+        """Normaliza la lista de plataformas pedida a claves de SOCIAL_SIZES."""
+        if isinstance(platforms, str):
+            platforms = [x.strip() for x in re.split(r"[,\s]+", platforms) if x.strip()]
+        out = []
+        for p in (platforms or ["all"]):
+            key = p.lower().strip()
+            if key in s.SOCIAL_ALIASES:
+                out.extend(s.SOCIAL_ALIASES[key])
+            elif key in s.SOCIAL_SIZES:
+                out.append(key)
+        # sin duplicados, preservando orden
+        return list(dict.fromkeys(out)) or ["instagram_post"]
 
     def _check_svg(s, path):
         """Validación estructural barata del SVG (antes de gastar en visión):

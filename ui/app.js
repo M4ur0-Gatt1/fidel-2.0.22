@@ -150,6 +150,39 @@ window.rasterizeSVG = function (svg, maxPx) {
   } catch (e) { window.__raster = "ERR:" + e.message; }
 };
 
+/* ── redimensionar/recortar imagen a un tamaño exacto (redes sociales) ──
+   'cover': escala para llenar w×h y recorta centrado (lo estándar para feeds).
+   Mismo patrón async+polling que rasterizeSVG. Convierte el dataURL a Blob
+   para no ensuciar (taint) el canvas y poder exportarlo. */
+window.__fit = "IDLE";
+window.fitImage = function (dataUrl, w, h) {
+  window.__fit = "PENDING";
+  try {
+    const comma = dataUrl.indexOf(",");
+    const meta = dataUrl.slice(0, comma), b64 = dataUrl.slice(comma + 1);
+    const mime = (meta.match(/data:([^;]+)/) || [])[1] || "image/png";
+    const bin = atob(b64), arr = new Uint8Array(bin.length);
+    for (let i = 0; i < bin.length; i++) arr[i] = bin.charCodeAt(i);
+    const url = URL.createObjectURL(new Blob([arr], { type: mime }));
+    const img = new Image();
+    img.onload = function () {
+      try {
+        const c = document.createElement("canvas"); c.width = w; c.height = h;
+        const ctx = c.getContext("2d");
+        ctx.fillStyle = "#ffffff"; ctx.fillRect(0, 0, w, h);
+        const iw = img.naturalWidth || w, ih = img.naturalHeight || h;
+        const scale = Math.max(w / iw, h / ih);          // cover
+        const dw = iw * scale, dh = ih * scale;
+        ctx.drawImage(img, (w - dw) / 2, (h - dh) / 2, dw, dh);
+        window.__fit = c.toDataURL("image/png");
+      } catch (e) { window.__fit = "ERR:" + e.message; }
+      URL.revokeObjectURL(url);
+    };
+    img.onerror = function () { window.__fit = "ERR:no pude cargar la imagen"; URL.revokeObjectURL(url); };
+    img.src = url;
+  } catch (e) { window.__fit = "ERR:" + e.message; }
+};
+
 /* ── menú contextual del chat (copiar) ──
    pywebview apaga el menú nativo del navegador salvo --debug (para no exponer
    "Inspeccionar" a usuarios finales), y con eso también se llevó puesto el
