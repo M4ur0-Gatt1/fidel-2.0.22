@@ -175,7 +175,11 @@
     <button class="ibtn" id="dzAddRect" title="Agregar rectángulo">▭</button>
     <button class="ibtn" id="dzAddCircle" title="Agregar círculo">◯</button>
     <button class="ibtn" id="dzAddText" title="Agregar texto">T</button>
+    <button class="ibtn" id="dzAddLine" title="Agregar línea">⟋</button>
+    <button class="ibtn" id="dzDup" title="Duplicar seleccionado (Ctrl+D)">⎘</button>
     <button class="ibtn" id="dzDel" title="Borrar seleccionado (Supr)">🗑</button>
+    <div class="vsep"></div>
+    <button class="ibtn" id="dzVar" title="🧬 Variaciones: el agente evoluciona el diseño y elegís">🧬</button>
     <div class="flex1"></div>
     <button class="ibtn" id="dzZoomOut" title="Alejar">−</button>
     <span class="dz-zoom" id="dzZoomLbl">100%</span>
@@ -201,6 +205,7 @@
       </div>
     </div>
     <div class="dz-inspector" id="dzInspector">
+      <div id="dzLayers"></div>
       <div class="dz-empty" id="dzEmpty">Hacé clic en un elemento para editarlo o moverlo (arrastrá),<br>o pedile un cambio a Fidel abajo.</div>
       <div id="dzProps" hidden></div>
     </div>

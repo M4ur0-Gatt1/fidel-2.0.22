@@ -40,7 +40,7 @@ ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.7.0"
+FIDEL_VERSION = "2.8.0"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -559,6 +559,58 @@ class Api:
         fp.write_text(starter, encoding="utf-8")
         s._push("ws", {"ws": s.ws, "tree": s._tree(), "branch": s._git_branch()})
         return {"path": str(fp), "name": fp.name}
+
+    # direcciones creativas del 🧬: cada variación explora un eje distinto
+    VAR_DIRECTIONS = [
+        "paleta de colores alternativa (mantené la composición igual)",
+        "más minimalista: menos elementos, más aire, formas más simples",
+        "más contraste y jerarquía visual: pesos, tamaños y color más marcados",
+        "composición distinta: reorganizá los elementos con otro layout",
+    ]
+
+    def design_variations(s, path, current_svg=""):
+        """🧬 Evolución de diseño: genera variaciones del SVG en direcciones
+        creativas distintas (en paralelo) para que el usuario elija una y pueda
+        volver a evolucionar desde ella. Devuelve {variants: [{dir, svg}]}."""
+        if not s.prov:
+            return {"error": "No hay proveedor activo — configurá una API key (⚙)"}
+        svg = (current_svg or "").strip()
+        if not svg:
+            try:
+                svg = Path(path).read_text(encoding="utf-8", errors="replace")
+            except OSError as e:
+                return {"error": str(e)}
+        if "<svg" not in svg:
+            return {"error": "El archivo no parece un SVG"}
+        src = svg[:14000]   # techo de contexto: diseños gigantes se recortan
+        results, lock = [], threading.Lock()
+
+        def worker(direction):
+            try:
+                r = s.prov.chat(
+                    [{"role": "user", "content":
+                      "Este es un diseño SVG:\n\n" + src +
+                      "\n\nCreá UNA variación del MISMO diseño con esta dirección: "
+                      + direction +
+                      ".\nMantené el mismo viewBox y que todo quede dentro del lienzo. "
+                      "Respondé SOLO con el código SVG completo, sin markdown ni explicación."}],
+                    system_prompt="Sos un diseñador gráfico senior. Respondés únicamente con SVG válido.",
+                    temperature=0.9, max_tokens=6000)
+                m = re.search(r"<svg.*?</svg>", r.content or "", re.DOTALL)
+                if m:
+                    with lock:
+                        results.append({"dir": direction.split(":")[0].split("(")[0].strip(),
+                                        "svg": m.group(0)})
+            except Exception as e:
+                log(f"variación falló ({direction[:30]}): {e}")
+
+        ts = [threading.Thread(target=worker, args=(d,), daemon=True)
+              for d in s.VAR_DIRECTIONS]
+        for t in ts:
+            t.start()
+        for t in ts:
+            t.join(timeout=150)
+        return {"variants": results}
 
     def set_zoom(s, z):
         s.cfg.data["zoom"] = z

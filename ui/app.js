@@ -428,18 +428,24 @@ function bind() {
   $("#dzAddRect").onclick = () => dzAddShape("rect");
   $("#dzAddCircle").onclick = () => dzAddShape("circle");
   $("#dzAddText").onclick = () => dzAddShape("text");
+  $("#dzAddLine").onclick = () => dzAddShape("line");
+  $("#dzDup").onclick = dzDuplicate;
   $("#dzDel").onclick = dzDeleteSelected;
+  $("#dzVar").onclick = dzVariations;
   $("#dzCodeBtn").onclick = dzToggleCode;
   $("#dzCodeApply").onclick = dzApplyCode;
   $("#dzSend").onclick = designPrompt;
   $("#dzPrompt").addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); designPrompt(); }
   });
-  // Supr/Delete borra el elemento seleccionado (si no estás escribiendo)
+  // atajos del editor de diseño (si no estás escribiendo en un campo)
   document.addEventListener("keydown", e => {
-    if ((e.key === "Delete" || e.key === "Backspace") && !$("#designView").hidden && DZ.sel
-        && !/^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || ""))) {
+    if ($("#designView").hidden || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || ""))) return;
+    if ((e.key === "Delete" || e.key === "Backspace") && DZ.sel) {
       e.preventDefault(); dzDeleteSelected();
+    }
+    if (e.ctrlKey && e.key.toLowerCase() === "d" && DZ.sel) {
+      e.preventDefault(); dzDuplicate();
     }
   });
   document.querySelectorAll(".chip").forEach(c => {
@@ -1388,6 +1394,7 @@ async function openDesign(path) {
   $("#dzProps").hidden = true; $("#dzEmpty").hidden = false;
   $("#dzHandle").hidden = true;
   $("#dzCode").hidden = true;
+  dzBuildLayers();
   $("#designView").hidden = false;
 }
 function closeDesign() { $("#designView").hidden = true; DZ.sel = null; }
@@ -1406,6 +1413,7 @@ function dzSelect(el) {
   DZ.sel = el; el.classList.add("dz-sel");
   dzBuildInspector(el);
   dzPositionHandle();
+  dzBuildLayers();
   // modo comentario: el dock ahora apunta SOLO a este elemento
   $("#dzPrompt").placeholder = `💬 Comentario sobre <${el.tagName.toLowerCase()}> — Fidel edita SOLO ese elemento`;
 }
@@ -1413,6 +1421,7 @@ function dzDeselect() {
   if (DZ.sel) { DZ.sel.classList.remove("dz-sel"); DZ.sel = null; }
   $("#dzProps").hidden = true; $("#dzEmpty").hidden = false;
   $("#dzHandle").hidden = true; $("#dzPin").hidden = true;
+  dzBuildLayers();
   $("#dzPrompt").placeholder = "Pedile un cambio a Fidel… ej: «hacé el título más grande y centralo»";
 }
 /* ubica el tirador de resize (esquina inferior-derecha) y el pin de comentario
@@ -1515,6 +1524,7 @@ function dzHandleDown(e) {
     r: +el.getAttribute("r") || 0, rx: +el.getAttribute("rx") || 0, ry: +el.getAttribute("ry") || 0,
     fs: parseFloat(dzGet(el, "font-size", "fontSize")) || 20,
     cx: +el.getAttribute("cx") || 0, cy: +el.getAttribute("cy") || 0,
+    x2: +el.getAttribute("x2") || 0, y2: +el.getAttribute("y2") || 0,
   };
   const move = (ev) => {
     const p = dzToUser(ev.clientX, ev.clientY);
@@ -1529,6 +1539,9 @@ function dzHandleDown(e) {
       el.setAttribute("ry", Math.max(1, Math.round(b.ry + dy)));
     } else if (t === "text") {
       el.setAttribute("font-size", Math.max(4, Math.round(b.fs + dy)));
+    } else if (t === "line") {
+      el.setAttribute("x2", Math.round(b.x2 + dx));
+      el.setAttribute("y2", Math.round(b.y2 + dy));
     } else {
       return;   // otros: usar el inspector
     }
@@ -1560,6 +1573,11 @@ function dzAddShape(kind) {
     el = document.createElementNS(NS, "circle");
     el.setAttribute("cx", cx); el.setAttribute("cy", cy); el.setAttribute("r", Math.min(W, H) * 0.15);
     el.setAttribute("fill", "#3366cc");
+  } else if (kind === "line") {
+    el = document.createElementNS(NS, "line");
+    el.setAttribute("x1", cx - W * 0.15); el.setAttribute("y1", cy);
+    el.setAttribute("x2", cx + W * 0.15); el.setAttribute("y2", cy);
+    el.setAttribute("stroke", "#E5322D"); el.setAttribute("stroke-width", Math.max(2, Math.round(H * 0.008)));
   } else {
     el = document.createElementNS(NS, "text");
     el.setAttribute("x", cx); el.setAttribute("y", cy); el.setAttribute("text-anchor", "middle");
@@ -1572,10 +1590,121 @@ function dzAddShape(kind) {
 function dzDeleteSelected() {
   if (!DZ.sel) return;
   DZ.sel.remove(); DZ.sel = null;
-  $("#dzHandle").hidden = true; $("#dzProps").hidden = true; $("#dzEmpty").hidden = false;
-  dzMarkDirty();
+  $("#dzHandle").hidden = true; $("#dzPin").hidden = true;
+  $("#dzProps").hidden = true; $("#dzEmpty").hidden = false;
+  dzMarkDirty(); dzBuildLayers();
 }
 function dzMarkDirty() { DZ.dirty = true; }
+
+/* duplicar el elemento seleccionado (con un pequeño corrimiento para verlo) */
+function dzDuplicate() {
+  if (!DZ.sel) return;
+  const c = DZ.sel.cloneNode(true);
+  c.classList.remove("dz-sel");
+  if (!c.getAttribute("class")) c.removeAttribute("class");
+  DZ.sel.parentNode.insertBefore(c, DZ.sel.nextSibling);
+  dzWritePos(c, dzReadPos(c), 20, 20);
+  dzSelect(c); dzMarkDirty();
+}
+
+/* ── panel de capas: lista de elementos, reordenar (z), mostrar/ocultar ── */
+const DZ_SKIP_TAGS = ["defs", "title", "desc", "style", "metadata", "lineargradient",
+                      "radialgradient", "filter", "clippath", "mask", "symbol"];
+function dzLayerLabel(el) {
+  const t = el.tagName.toLowerCase();
+  if (t === "text" || t === "tspan") return "T «" + (el.textContent || "").trim().slice(0, 16) + "»";
+  if (el.id) return t + " #" + el.id;
+  const f = el.getAttribute("fill");
+  return t + (f && f !== "none" ? " · " + f : "");
+}
+function dzBuildLayers() {
+  const box = $("#dzLayers");
+  if (!box) return;
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (!svg) { box.innerHTML = ""; return; }
+  const kids = [...svg.children].filter(n => !DZ_SKIP_TAGS.includes(n.tagName.toLowerCase()));
+  if (!kids.length) { box.innerHTML = ""; return; }
+  box.innerHTML = '<div class="dz-layers-h">CAPAS <span class="dz-hint">(arriba = al frente)</span></div>';
+  // en DOM el último dibuja arriba → mostramos al frente primero, como en Illustrator
+  [...kids].reverse().forEach(el => {
+    const row = document.createElement("div");
+    row.className = "dz-layer" + (el === DZ.sel ? " sel" : "");
+    const eye = document.createElement("span");
+    const hidden = el.getAttribute("display") === "none";
+    eye.className = "dz-eye"; eye.textContent = hidden ? "◌" : "👁"; eye.title = hidden ? "Mostrar" : "Ocultar";
+    eye.onclick = (e) => { e.stopPropagation();
+      hidden ? el.removeAttribute("display") : el.setAttribute("display", "none");
+      dzMarkDirty(); dzBuildLayers(); };
+    const lbl = document.createElement("span");
+    lbl.className = "dz-layer-t"; lbl.textContent = dzLayerLabel(el);
+    const up = document.createElement("span");
+    up.className = "dz-ord"; up.textContent = "▲"; up.title = "Traer al frente";
+    up.onclick = (e) => { e.stopPropagation();
+      if (el.nextElementSibling) el.parentNode.insertBefore(el, el.nextElementSibling.nextElementSibling);
+      dzMarkDirty(); dzBuildLayers(); dzPositionHandle(); };
+    const dn = document.createElement("span");
+    dn.className = "dz-ord"; dn.textContent = "▼"; dn.title = "Enviar atrás";
+    dn.onclick = (e) => { e.stopPropagation();
+      if (el.previousElementSibling) el.parentNode.insertBefore(el, el.previousElementSibling);
+      dzMarkDirty(); dzBuildLayers(); dzPositionHandle(); };
+    row.appendChild(eye); row.appendChild(lbl); row.appendChild(up); row.appendChild(dn);
+    row.onclick = () => dzSelect(el);
+    box.appendChild(row);
+  });
+}
+
+/* ── alinear el elemento seleccionado respecto del lienzo (viewBox) ── */
+function dzAlign(mode) {
+  const el = DZ.sel;
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (!el || !svg) return;
+  const vb = (svg.getAttribute("viewBox") || "0 0 1080 1080").split(/\s+/).map(Number);
+  const b = el.getBoundingClientRect();
+  const p1 = dzToUser(b.left, b.top), p2 = dzToUser(b.right, b.bottom);
+  let dx = 0, dy = 0;
+  if (mode === "l") dx = vb[0] - p1.x;
+  if (mode === "ch") dx = (vb[0] + vb[2] / 2) - (p1.x + p2.x) / 2;
+  if (mode === "r") dx = (vb[0] + vb[2]) - p2.x;
+  if (mode === "t") dy = vb[1] - p1.y;
+  if (mode === "cv") dy = (vb[1] + vb[3] / 2) - (p1.y + p2.y) / 2;
+  if (mode === "b") dy = (vb[1] + vb[3]) - p2.y;
+  dzWritePos(el, dzReadPos(el), dx, dy);
+  dzPositionHandle(); dzMarkDirty(); dzBuildInspector(el);
+}
+
+/* ── 🧬 Variaciones: el agente evoluciona el diseño y elegís con un clic.
+   Cría selectiva de diseños — elegí una y volvé a evolucionar desde ella. ── */
+async function dzVariations() {
+  if (!DZ.path || DZ.busy) return;
+  DZ.busy = true;
+  dzSetStatus("🧬 Generando variaciones del diseño (4 direcciones en paralelo)…");
+  try {
+    // mandar el estado ACTUAL del lienzo (con tus últimos toques, aún sin guardar)
+    const svg = $("#dzCanvas").querySelector("svg");
+    const r = await api.design_variations(DZ.path, svg ? dzSerialize(svg) : "");
+    const vs = (r && r.variants) || [];
+    if (r && r.error) { dzSetStatus("❌ " + r.error); return; }
+    if (!vs.length) { dzSetStatus("⚠ No salieron variaciones válidas — probá de nuevo (o cambiá de modelo)."); return; }
+    openModal(`<h2>🧬 Variaciones</h2>
+      <div class="sub">Clic en una para reemplazar el diseño — después podés volver a 🧬 y evolucionar desde ella. (Nada se guarda hasta que toques 💾.)</div>
+      <div class="var-grid">` +
+      vs.map((v, i) => `<div class="var-cell" data-i="${i}"><div class="var-tag">${v.dir}</div>${v.svg}</div>`).join("") +
+      `</div><div class="m-actions"><button class="ghost" id="mCancel">Cerrar</button></div>`);
+    document.querySelectorAll(".var-cell").forEach(c => c.onclick = () => {
+      const v = vs[+c.dataset.i];
+      $("#dzCodeArea").value = v.svg;
+      dzApplyCode();
+      closeModal();
+      dzSetStatus("🧬 Aplicada la variación «" + v.dir + "» — 💾 para guardarla, o 🧬 para seguir evolucionando.");
+    });
+    $("#mCancel").onclick = closeModal;
+    dzSetStatus("");
+  } catch (e) {
+    dzSetStatus("❌ " + (e.message || e));
+  } finally {
+    DZ.busy = false;
+  }
+}
 
 /* ── open code design: ver/editar el SVG como código, lado a lado ── */
 function dzToggleCode() {
@@ -1602,7 +1731,7 @@ function dzApplyCode() {
   cv.insertBefore(nsvg, handle);
   if (!nsvg.getAttribute("width")) nsvg.style.width = "min(80vw, 900px)";
   DZ.sel = null; $("#dzProps").hidden = true; $("#dzEmpty").hidden = false; handle.hidden = true;
-  dzApplyZoom(); dzMarkDirty();
+  dzApplyZoom(); dzMarkDirty(); dzBuildLayers();
 }
 /* serializa el svg sin las marcas de la UI (clase de selección) */
 function dzSerialize(svg) {
@@ -1679,6 +1808,15 @@ function dzBuildInspector(el) {
   const P = $("#dzProps");
   const isText = tag === "text" || tag === "tspan";
   let html = `<div class="dz-tag">&lt;${tag}&gt;</div>`;
+  // alinear respecto del lienzo
+  html += `<div class="dz-field"><label>Alinear al lienzo</label><div class="dz-alignrow">` +
+    `<span class="dz-al" data-al="l" title="Izquierda">⇤</span>` +
+    `<span class="dz-al" data-al="ch" title="Centro horizontal">↔</span>` +
+    `<span class="dz-al" data-al="r" title="Derecha">⇥</span>` +
+    `<span class="dz-al" data-al="t" title="Arriba">⤒</span>` +
+    `<span class="dz-al" data-al="cv" title="Centro vertical">↕</span>` +
+    `<span class="dz-al" data-al="b" title="Abajo">⤓</span>` +
+    `</div></div>`;
   // color de relleno y trazo (picker + texto para aceptar none/hex/nombre)
   html += `<div class="dz-field"><label>Relleno (fill)</label><div class="dz-row">` +
     `<input id="dzFillC" type="color" value="${dzHex(dzGet(el, "fill", "fill"))}" style="width:44px">` +
@@ -1715,6 +1853,11 @@ function dzBuildInspector(el) {
   if (el.hasAttribute("width") || el.hasAttribute("height"))
     html += `<div class="dz-row">` + dzField("Ancho", "dzW", dzGet(el, "width", ""), "number") +
       dzField("Alto", "dzH", dzGet(el, "height", ""), "number") + `</div>`;
+  if (tag === "line")
+    html += `<div class="dz-row">` + dzField("X1", "dzX1", dzGet(el, "x1", ""), "number") +
+      dzField("Y1", "dzY1", dzGet(el, "y1", ""), "number") + `</div>` +
+      `<div class="dz-row">` + dzField("X2", "dzX2", dzGet(el, "x2", ""), "number") +
+      dzField("Y2", "dzY2", dzGet(el, "y2", ""), "number") + `</div>`;
   P.innerHTML = html; P.hidden = false; $("#dzEmpty").hidden = true;
   dzWire(el, isText);
 }
@@ -1738,6 +1881,12 @@ function dzWire(el, isText) {
   on("dzCY", e => dzSet(el, "cy", e.target.value));
   on("dzW", e => dzSet(el, "width", e.target.value));
   on("dzH", e => dzSet(el, "height", e.target.value));
+  on("dzX1", e => dzSet(el, "x1", e.target.value));
+  on("dzY1", e => dzSet(el, "y1", e.target.value));
+  on("dzX2", e => dzSet(el, "x2", e.target.value));
+  on("dzY2", e => dzSet(el, "y2", e.target.value));
+  document.querySelectorAll("#dzProps .dz-al").forEach(b =>
+    b.onclick = () => dzAlign(b.dataset.al));
   if (isText) {
     on("dzText", e => { el.textContent = e.target.value; });
     on("dzFont", e => dzSet(el, "font-family", e.target.value));
