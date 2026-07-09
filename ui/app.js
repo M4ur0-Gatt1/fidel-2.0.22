@@ -1264,7 +1264,7 @@ function modalKeys() {
   $("#agConts").value = S.agent.max_continuations ?? 25;
   $("#agMem").value = S.agent.memory_turns ?? 24;
   $("#agVerify").checked = S.agent.verify_runtime !== false;   // default: activado
-  $("#agDesign").checked = S.agent.verify_design !== false;    // default: activado
+  $("#agDesign").checked = S.agent.verify_design === true;     // default: apagado (opt-in)
   $("#mCancel").onclick = closeModal;
   $("#mSave").onclick = async () => {
     const keys = {};

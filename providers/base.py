@@ -123,17 +123,27 @@ class OpenAICompatProvider(AIProvider):
     # marca para que send_chat sepa que este provider hace streaming real
     supports_stream = True
 
+    # modelos que NO sirven como modelo de CHAT del agente (imagen, video, audio,
+    # embeddings, rerankers, moderación…). Se filtran del selector para que el
+    # usuario no elija p.ej. un Qwen-Image y le falle todo con "model does not exist".
+    NON_CHAT = ("whisper", "tts", "-asr", "audio", "voice", "speech", "guard",
+                "embed", "embedding", "moderation", "rerank", "reranker", "bge",
+                "dall-e", "dalle", "stable-diffusion", "stable_diffusion", "sdxl",
+                "sd3", "flux", "kolors", "cogview", "-image", "image-", "qwen-image",
+                "z-image", "playground-v", "photomaker", "instantid", "wan", "-video",
+                "video-", "musicgen", "seedream", "hunyuan-video", "ltx")
+
     def list_models(self):
-        """Lista en vivo desde /models si hay key; si no, la estática."""
+        """Lista en vivo desde /models si hay key; si no, la estática. Filtra los
+        modelos que no son de chat (imagen/audio/embeddings/rerank)."""
         import requests
         try:
             r = requests.get(f"{self.base_url}/models",
                              headers={"Authorization": f"Bearer {self.api_key}"},
                              timeout=8)
             if r.ok:
-                skip = ("whisper", "tts", "guard", "embed", "moderation", "dall-e")
                 ids = sorted(m["id"] for m in r.json().get("data", [])
-                             if not any(x in m["id"].lower() for x in skip))
+                             if not any(x in m["id"].lower() for x in self.NON_CHAT))
                 if ids:
                     return ids
         except (requests.RequestException, ValueError, KeyError):

@@ -34,10 +34,13 @@ IGNORE_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv",
 CODE_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".md", ".txt", ".json",
             ".html", ".css", ".sh", ".ps1", ".yml", ".yaml", ".toml",
             ".sql", ".c", ".cpp", ".h", ".rs", ".go", ".java"}
+# imágenes/vectores: se muestran en el árbol (para poder reabrirlas en el visor/
+# editor de diseño) pero NO entran al contexto ni al search (son binarias/pesadas)
+ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.5.0"
+FIDEL_VERSION = "2.5.1"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -427,11 +430,19 @@ class Api:
     # ── estado / config ───────────────────────────────────
     def get_state(s):
         active = s.cfg.get_active_provider()
+        models = s._models(active)
+        model = s.cfg.get_model(active)
+        # si el modelo guardado ya no es de chat (quedó filtrado, ej. Qwen-Image),
+        # caer al primer modelo válido para que la UI y la config coincidan
+        if models and model not in models and not models[0].startswith("("):
+            model = models[0]
+            s.cfg.set_model(active, model)
+            s._initp()
         st = {
             "theme": s.cfg.theme if s.cfg.theme in ("dark", "light") else "dark",
             "provider": active,
-            "model": s.cfg.get_model(active),
-            "models": s._models(active),
+            "model": model,
+            "models": models,
             "langs": CodeRunner.supported_languages(),
             "ws": s.ws,
             "branch": s._git_branch(),
@@ -630,8 +641,9 @@ class Api:
                         continue
                     items.append({"name": p.name, "path": str(p), "dir": True,
                                   "children": walk(p, depth + 1) if depth < 3 else []})
-                elif p.suffix.lower() in CODE_EXT:
-                    items.append({"name": p.name, "path": str(p), "dir": False})
+                elif p.suffix.lower() in CODE_EXT or p.suffix.lower() in ASSET_EXT:
+                    items.append({"name": p.name, "path": str(p), "dir": False,
+                                  "asset": p.suffix.lower() in ASSET_EXT})
             return items
         return walk(Path(s.ws), 0)
 
@@ -1547,7 +1559,7 @@ class Api:
     def _check_design_written(s, request):
         """Crítica visual de los .svg escritos este turno (auto-verificación).
         Desactivable con agent.verify_design=false."""
-        if not s.cfg.data.get("agent", {}).get("verify_design", True):
+        if not s.cfg.data.get("agent", {}).get("verify_design", False):
             return ""
         svgs = [p for p in dict.fromkeys(s._written) if p.lower().endswith(".svg")]
         if not svgs:
