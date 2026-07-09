@@ -171,20 +171,36 @@
 <div id="designView" hidden>
   <div class="art-bar">
     <span class="art-title" id="dzTitle">Diseño</span>
+    <div class="vsep"></div>
+    <button class="ibtn" id="dzAddRect" title="Agregar rectángulo">▭</button>
+    <button class="ibtn" id="dzAddCircle" title="Agregar círculo">◯</button>
+    <button class="ibtn" id="dzAddText" title="Agregar texto">T</button>
+    <button class="ibtn" id="dzDel" title="Borrar seleccionado (Supr)">🗑</button>
     <div class="flex1"></div>
     <button class="ibtn" id="dzZoomOut" title="Alejar">−</button>
     <span class="dz-zoom" id="dzZoomLbl">100%</span>
     <button class="ibtn" id="dzZoomIn" title="Acercar">+</button>
     <button class="ibtn" id="dzZoomFit" title="Ajustar">⤢</button>
     <div class="vsep"></div>
+    <button class="ibtn" id="dzCodeBtn" title="Ver/editar el código SVG">&lt;/&gt;</button>
     <button class="ibtn" id="dzSave" title="Guardar cambios al .svg"><svg class="ico"><use href="#i-save"/></svg></button>
     <button class="ibtn" id="dzExt" title="Abrir en el navegador"><svg class="ico"><use href="#i-ext"/></svg></button>
     <button class="ibtn" id="dzClose" title="Cerrar (Esc)"><svg class="ico"><use href="#i-x"/></svg></button>
   </div>
   <div class="dz-body">
-    <div class="dz-canvas" id="dzCanvas"></div>
+    <div class="dz-canvas" id="dzCanvas">
+      <div class="dz-handle" id="dzHandle" hidden></div>
+    </div>
+    <div class="dz-code" id="dzCode" hidden>
+      <textarea id="dzCodeArea" spellcheck="false"></textarea>
+      <div class="dz-code-bar">
+        <span class="dz-hint">Editá el SVG y aplicá para verlo en el lienzo.</span>
+        <div class="flex1"></div>
+        <button class="ghost" id="dzCodeApply">Aplicar</button>
+      </div>
+    </div>
     <div class="dz-inspector" id="dzInspector">
-      <div class="dz-empty" id="dzEmpty">Hacé clic en un elemento del diseño para editarlo,<br>o pedile un cambio a Fidel abajo.</div>
+      <div class="dz-empty" id="dzEmpty">Hacé clic en un elemento para editarlo o moverlo (arrastrá),<br>o pedile un cambio a Fidel abajo.</div>
       <div id="dzProps" hidden></div>
     </div>
   </div>

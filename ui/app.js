@@ -419,14 +419,28 @@ function bind() {
   // entorno de diseño
   $("#dzClose").onclick = closeDesign;
   $("#dzSave").onclick = dzSave;
-  $("#dzCanvas").addEventListener("click", dzOnCanvasClick);
+  $("#dzCanvas").addEventListener("mousedown", dzPointerDown);
+  $("#dzHandle").addEventListener("mousedown", dzHandleDown);
   $("#dzExt").onclick = () => { if (DZ.path) api.preview_html(DZ.path, $("#dzCanvas").innerHTML); };
   $("#dzZoomIn").onclick = () => dzZoom(0.15);
   $("#dzZoomOut").onclick = () => dzZoom(-0.15);
   $("#dzZoomFit").onclick = () => { DZ.zoom = 1; dzApplyZoom(); };
+  $("#dzAddRect").onclick = () => dzAddShape("rect");
+  $("#dzAddCircle").onclick = () => dzAddShape("circle");
+  $("#dzAddText").onclick = () => dzAddShape("text");
+  $("#dzDel").onclick = dzDeleteSelected;
+  $("#dzCodeBtn").onclick = dzToggleCode;
+  $("#dzCodeApply").onclick = dzApplyCode;
   $("#dzSend").onclick = designPrompt;
   $("#dzPrompt").addEventListener("keydown", e => {
     if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); designPrompt(); }
+  });
+  // Supr/Delete borra el elemento seleccionado (si no estás escribiendo)
+  document.addEventListener("keydown", e => {
+    if ((e.key === "Delete" || e.key === "Backspace") && !$("#designView").hidden && DZ.sel
+        && !/^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || ""))) {
+      e.preventDefault(); dzDeleteSelected();
+    }
   });
   document.querySelectorAll(".chip").forEach(c => {
     c.onclick = () => {
@@ -1372,6 +1386,8 @@ async function openDesign(path) {
   if (svg && !svg.getAttribute("width")) svg.style.width = "min(80vw, 900px)";
   DZ.zoom = 1; dzApplyZoom();
   $("#dzProps").hidden = true; $("#dzEmpty").hidden = false;
+  $("#dzHandle").hidden = true;
+  $("#dzCode").hidden = true;
   $("#designView").hidden = false;
 }
 function closeDesign() { $("#designView").hidden = true; DZ.sel = null; }
@@ -1381,9 +1397,33 @@ function dzApplyZoom() {
   const svg = $("#dzCanvas").querySelector("svg");
   if (svg) svg.style.transform = "scale(" + DZ.zoom + ")";
   const lbl = $("#dzZoomLbl"); if (lbl) lbl.textContent = Math.round(DZ.zoom * 100) + "%";
+  dzPositionHandle();
 }
 function dzZoom(delta) { DZ.zoom = Math.min(4, Math.max(0.2, Math.round((DZ.zoom + delta) * 100) / 100)); dzApplyZoom(); }
-function dzDeselect() { if (DZ.sel) { DZ.sel.classList.remove("dz-sel"); DZ.sel = null; } $("#dzProps").hidden = true; $("#dzEmpty").hidden = false; }
+
+function dzSelect(el) {
+  if (DZ.sel) DZ.sel.classList.remove("dz-sel");
+  DZ.sel = el; el.classList.add("dz-sel");
+  dzBuildInspector(el);
+  dzPositionHandle();
+}
+function dzDeselect() {
+  if (DZ.sel) { DZ.sel.classList.remove("dz-sel"); DZ.sel = null; }
+  $("#dzProps").hidden = true; $("#dzEmpty").hidden = false;
+  $("#dzHandle").hidden = true;
+}
+/* ubica el tirador de resize en la esquina inferior-derecha del elemento */
+function dzPositionHandle() {
+  const h = $("#dzHandle");
+  if (!DZ.sel) { h.hidden = true; return; }
+  try {
+    const cvRect = $("#dzCanvas").getBoundingClientRect();
+    const b = DZ.sel.getBoundingClientRect();
+    h.style.left = (b.right - cvRect.left) + "px";
+    h.style.top = (b.bottom - cvRect.top) + "px";
+    h.hidden = false;
+  } catch (e) { h.hidden = true; }
+}
 
 /* botón "Diseño" de la barra: reabre el diseño actual, o crea un lienzo nuevo
    para que se vean las herramientas aunque no haya un SVG abierto todavía */
@@ -1399,13 +1439,172 @@ async function designEntry() {
   }
 }
 
-function dzOnCanvasClick(e) {
+/* convierte coordenadas de pantalla a unidades de usuario del SVG (respeta
+   viewBox y el zoom CSS, porque usa la matriz real de pantalla) */
+function dzToUser(clientX, clientY) {
+  const svg = $("#dzCanvas").querySelector("svg");
+  const pt = svg.createSVGPoint(); pt.x = clientX; pt.y = clientY;
+  return pt.matrixTransform(svg.getScreenCTM().inverse());
+}
+
+/* mousedown en el lienzo: selecciona el elemento y prepara arrastre para mover */
+function dzPointerDown(e) {
+  if (e.target.id === "dzHandle") return;   // el tirador tiene su propio manejador
   const el = e.target;
-  // clic en el vacío (lienzo o fondo del svg) → deseleccionar
   if (!el || el === $("#dzCanvas") || el.tagName.toLowerCase() === "svg") { dzDeselect(); return; }
-  if (DZ.sel) DZ.sel.classList.remove("dz-sel");
-  DZ.sel = el; el.classList.add("dz-sel");
-  dzBuildInspector(el);
+  e.preventDefault();
+  if (el !== DZ.sel) dzSelect(el);
+  const start = dzToUser(e.clientX, e.clientY);
+  const base = dzReadPos(el);
+  let moved = false;
+  const move = (ev) => {
+    const p = dzToUser(ev.clientX, ev.clientY);
+    const dx = p.x - start.x, dy = p.y - start.y;
+    if (!moved && Math.abs(dx) + Math.abs(dy) < 1) return;
+    moved = true;
+    dzWritePos(el, base, dx, dy);
+    dzPositionHandle();
+  };
+  const up = () => {
+    document.removeEventListener("mousemove", move);
+    document.removeEventListener("mouseup", up);
+    if (moved) { dzBuildInspector(el); dzMarkDirty(); }
+  };
+  document.addEventListener("mousemove", move);
+  document.addEventListener("mouseup", up);
+}
+
+/* posición base de un elemento según su tipo (para mover con el mouse) */
+function dzReadPos(el) {
+  const t = el.tagName.toLowerCase();
+  if (el.hasAttribute("cx") || el.hasAttribute("cy"))
+    return { mode: "c", cx: +el.getAttribute("cx") || 0, cy: +el.getAttribute("cy") || 0 };
+  if (el.hasAttribute("x") || el.hasAttribute("y"))
+    return { mode: "xy", x: +el.getAttribute("x") || 0, y: +el.getAttribute("y") || 0 };
+  // resto (path, polygon, line, g…): translate acumulado
+  const m = /translate\(\s*([-\d.]+)[ ,]+([-\d.]+)\s*\)/.exec(el.getAttribute("transform") || "");
+  return { mode: "t", tx: m ? +m[1] : 0, ty: m ? +m[2] : 0,
+           rest: (el.getAttribute("transform") || "").replace(/translate\([^)]*\)/, "").trim() };
+}
+function dzWritePos(el, base, dx, dy) {
+  if (base.mode === "c") {
+    el.setAttribute("cx", Math.round(base.cx + dx)); el.setAttribute("cy", Math.round(base.cy + dy));
+  } else if (base.mode === "xy") {
+    el.setAttribute("x", Math.round(base.x + dx)); el.setAttribute("y", Math.round(base.y + dy));
+  } else {
+    const tr = `translate(${Math.round(base.tx + dx)} ${Math.round(base.ty + dy)})`;
+    el.setAttribute("transform", (base.rest ? base.rest + " " : "") + tr);
+  }
+}
+
+/* tirador de resize: cambia tamaño según el tipo de elemento */
+function dzHandleDown(e) {
+  if (!DZ.sel) return;
+  e.preventDefault(); e.stopPropagation();
+  const el = DZ.sel, t = el.tagName.toLowerCase();
+  const start = dzToUser(e.clientX, e.clientY);
+  const b = {
+    w: +el.getAttribute("width") || 0, h: +el.getAttribute("height") || 0,
+    r: +el.getAttribute("r") || 0, rx: +el.getAttribute("rx") || 0, ry: +el.getAttribute("ry") || 0,
+    fs: parseFloat(dzGet(el, "font-size", "fontSize")) || 20,
+    cx: +el.getAttribute("cx") || 0, cy: +el.getAttribute("cy") || 0,
+  };
+  const move = (ev) => {
+    const p = dzToUser(ev.clientX, ev.clientY);
+    const dx = p.x - start.x, dy = p.y - start.y;
+    if (t === "rect" || t === "image") {
+      el.setAttribute("width", Math.max(1, Math.round(b.w + dx)));
+      el.setAttribute("height", Math.max(1, Math.round(b.h + dy)));
+    } else if (t === "circle") {
+      el.setAttribute("r", Math.max(1, Math.round(b.r + Math.max(dx, dy))));
+    } else if (t === "ellipse") {
+      el.setAttribute("rx", Math.max(1, Math.round(b.rx + dx)));
+      el.setAttribute("ry", Math.max(1, Math.round(b.ry + dy)));
+    } else if (t === "text") {
+      el.setAttribute("font-size", Math.max(4, Math.round(b.fs + dy)));
+    } else {
+      return;   // otros: usar el inspector
+    }
+    dzPositionHandle();
+  };
+  const up = () => {
+    document.removeEventListener("mousemove", move);
+    document.removeEventListener("mouseup", up);
+    dzBuildInspector(el); dzMarkDirty();
+  };
+  document.addEventListener("mousemove", move);
+  document.addEventListener("mouseup", up);
+}
+
+/* agregar una forma nueva al centro del lienzo y seleccionarla */
+function dzAddShape(kind) {
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (!svg) return;
+  const vb = (svg.getAttribute("viewBox") || "0 0 1080 1080").split(/\s+/).map(Number);
+  const W = vb[2] || 1080, H = vb[3] || 1080, cx = W / 2, cy = H / 2;
+  const NS = "http://www.w3.org/2000/svg";
+  let el;
+  if (kind === "rect") {
+    el = document.createElementNS(NS, "rect");
+    el.setAttribute("x", cx - W * 0.15); el.setAttribute("y", cy - H * 0.1);
+    el.setAttribute("width", W * 0.3); el.setAttribute("height", H * 0.2);
+    el.setAttribute("fill", "#E5322D");
+  } else if (kind === "circle") {
+    el = document.createElementNS(NS, "circle");
+    el.setAttribute("cx", cx); el.setAttribute("cy", cy); el.setAttribute("r", Math.min(W, H) * 0.15);
+    el.setAttribute("fill", "#3366cc");
+  } else {
+    el = document.createElementNS(NS, "text");
+    el.setAttribute("x", cx); el.setAttribute("y", cy); el.setAttribute("text-anchor", "middle");
+    el.setAttribute("font-family", "Figtree"); el.setAttribute("font-size", Math.round(H * 0.06));
+    el.setAttribute("fill", "#ffffff"); el.textContent = "Texto";
+  }
+  svg.appendChild(el);
+  dzSelect(el); dzMarkDirty();
+}
+function dzDeleteSelected() {
+  if (!DZ.sel) return;
+  DZ.sel.remove(); DZ.sel = null;
+  $("#dzHandle").hidden = true; $("#dzProps").hidden = true; $("#dzEmpty").hidden = false;
+  dzMarkDirty();
+}
+function dzMarkDirty() { DZ.dirty = true; }
+
+/* ── open code design: ver/editar el SVG como código, lado a lado ── */
+function dzToggleCode() {
+  const panel = $("#dzCode");
+  if (panel.hidden) {
+    const svg = $("#dzCanvas").querySelector("svg");
+    $("#dzCodeArea").value = svg ? dzSerialize(svg) : "";
+    panel.hidden = false;
+  } else {
+    panel.hidden = true;
+  }
+}
+function dzApplyCode() {
+  const txt = $("#dzCodeArea").value.trim();
+  if (!txt) return;
+  const cv = $("#dzCanvas");
+  const handle = $("#dzHandle");
+  // reemplazar el svg conservando el tirador
+  const old = cv.querySelector("svg");
+  const tmp = document.createElement("div"); tmp.innerHTML = txt;
+  const nsvg = tmp.querySelector("svg");
+  if (!nsvg) return sysMsg("❌ El código no tiene un <svg> válido.");
+  if (old) old.remove();
+  cv.insertBefore(nsvg, handle);
+  if (!nsvg.getAttribute("width")) nsvg.style.width = "min(80vw, 900px)";
+  DZ.sel = null; $("#dzProps").hidden = true; $("#dzEmpty").hidden = false; handle.hidden = true;
+  dzApplyZoom(); dzMarkDirty();
+}
+/* serializa el svg sin las marcas de la UI (clase de selección) */
+function dzSerialize(svg) {
+  const c = svg.cloneNode(true);
+  c.querySelectorAll(".dz-sel").forEach(n => n.classList.remove("dz-sel"));
+  c.querySelectorAll("[class='']").forEach(n => n.removeAttribute("class"));
+  c.style.removeProperty("transform"); c.style.removeProperty("width");
+  if (!c.getAttribute("style")) c.removeAttribute("style");   // no dejar style="" vacío
+  return c.outerHTML;
 }
 
 /* ── chat del diseño: pedirle una corrección al agente sin salir del editor ── */
@@ -1542,13 +1741,8 @@ function dzHex(c) {
 async function dzSave() {
   const svg = $("#dzCanvas").querySelector("svg");
   if (!svg || !DZ.path) return;
-  // sacar la marca de selección antes de serializar (es solo de la UI)
-  const clone = svg.cloneNode(true);
-  clone.querySelectorAll(".dz-sel").forEach(n => n.classList.remove("dz-sel"));
-  clone.querySelectorAll("[class='']").forEach(n => n.removeAttribute("class"));
-  const out = clone.outerHTML;
-  const r = await api.save_file(DZ.path, out);
-  if (r) { setStatus("💾 " + (r.name || "diseño guardado")); sysMsg("💾 Diseño guardado: " + (r.name || DZ.path)); }
+  const r = await api.save_file(DZ.path, dzSerialize(svg));
+  if (r) { DZ.dirty = false; setStatus("💾 " + (r.name || "diseño guardado")); sysMsg("💾 Diseño guardado: " + (r.name || DZ.path)); }
 }
 
 /* ── Herramientas del agente (qué puede hacer solo) ── */

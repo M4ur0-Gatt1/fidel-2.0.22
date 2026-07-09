@@ -558,8 +558,24 @@ footer {
     linear-gradient(-45deg,transparent 75%,#1c1c1f 75%);
   background-size: 22px 22px; background-position: 0 0,0 11px,11px -11px,-11px 0;
 }
-.dz-canvas svg { max-width: 100%; max-height: 100%; box-shadow: 0 6px 40px rgba(0,0,0,.5); background: #fff; transform-origin: center; transition: transform .12s; }
+.dz-canvas { position: relative; }
+.dz-canvas svg { max-width: 100%; max-height: 100%; box-shadow: 0 6px 40px rgba(0,0,0,.5); background: #fff; transform-origin: center; }
 .dz-zoom { font: 500 11px 'JetBrains Mono', monospace; color: var(--mut); min-width: 40px; text-align: center; }
+/* tirador de redimensión (esquina inferior derecha del elemento seleccionado) */
+.dz-handle {
+  position: absolute; width: 12px; height: 12px; background: var(--red);
+  border: 2px solid #fff; border-radius: 3px; cursor: nwse-resize; z-index: 5;
+  transform: translate(-50%, -50%); box-shadow: 0 1px 4px rgba(0,0,0,.5);
+}
+.dz-handle[hidden] { display: none; }
+/* panel de código SVG (open code design) */
+.dz-code { width: 42%; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--bg); }
+.dz-code[hidden] { display: none; }
+.dz-code textarea {
+  flex: 1; background: var(--bg); color: var(--txt); border: none; outline: none; resize: none;
+  font: 400 12px/1.5 'JetBrains Mono', monospace; padding: 12px;
+}
+.dz-code-bar { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-top: 1px solid var(--line); }
 /* elemento seleccionable / seleccionado */
 .dz-canvas svg * { cursor: pointer; }
 .dz-sel { outline: 1.5px dashed var(--red); outline-offset: 2px; }
