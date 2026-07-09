@@ -34,13 +34,14 @@ IGNORE_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv",
 CODE_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".md", ".txt", ".json",
             ".html", ".css", ".sh", ".ps1", ".yml", ".yaml", ".toml",
             ".sql", ".c", ".cpp", ".h", ".rs", ".go", ".java"}
-# imágenes/vectores: se muestran en el árbol (para poder reabrirlas en el visor/
-# editor de diseño) pero NO entran al contexto ni al search (son binarias/pesadas)
-ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp"}
+# imágenes/vectores/documentos: se muestran en el árbol (para reabrirlos en el
+# visor/editor de diseño o en su app) pero NO entran al contexto ni al search
+ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
+             ".docx", ".pdf"}
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.8.0"
+FIDEL_VERSION = "2.9.0"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -52,7 +53,9 @@ DEFAULT_EXPECTED = "2, 3, 5, 7, 11, 13, 17, 19, 23, 29"
 DEFAULT_SP = ("Eres Fidel, programador senior. Tienes HERRAMIENTAS: read_file, "
               "write_file, edit_file, exec_cmd, run_code, list_files, search_code, "
               "git, ssh_exec, scp_upload, generate_image, remember, check_design, social_export, "
-              "web_search, web_fetch. Usalas y ACTUA directo, sin pedir permiso. "
+              "web_search, web_fetch, write_doc. Usalas y ACTUA directo, sin pedir permiso. "
+              "Para documentos de texto (informes, cartas, presupuestos) usa write_doc: "
+              "crea un .docx real que se abre en Word. "
               "Tenes INTERNET: si necesitas info actual, documentacion, precios o algo que no sabes, "
               "usa web_search y leé las páginas con web_fetch en vez de inventar. "
               "Cuando descubras un hecho DURABLE de este proyecto (stack y versiones, "
@@ -113,7 +116,7 @@ class Api:
         s.prov = None
         s.ses_dir = data_dir() / 'historial'
         s.ses_dir.mkdir(parents=True, exist_ok=True)
-        s.ses_id = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        s.ses_id = s._new_sid()
         s.ses_msgs = []
         s._written = []
         s._mem = []          # memoria de conversación (pares user/assistant)
@@ -541,6 +544,19 @@ class Api:
         except OSError as e:
             return {"error": str(e)}
 
+    def open_external(s, path):
+        """Abre un archivo con su aplicación del sistema (Word para .docx, el
+        visor de PDF, etc.)."""
+        try:
+            if os.name == "nt":
+                os.startfile(path)                      # noqa: S606 — deliberado
+            else:
+                opener = "open" if sys.platform == "darwin" else "xdg-open"
+                subprocess.Popen([opener, path])
+            return {"ok": True}
+        except Exception as e:
+            return {"error": str(e)}
+
     def new_design(s):
         """Crea un lienzo SVG inicial (con elementos editables) y devuelve su ruta,
         para que el entorno de diseño abra con algo para tocar."""
@@ -948,6 +964,7 @@ class Api:
             {"type": "function", "function": {"name": "remember", "description": "Guarda un HECHO DURABLE de ESTE proyecto en la memoria del workspace (.fidel/memoria.md) para tenerlo en futuras sesiones: stack y versiones, comandos de build/test/deploy, servidores y rutas, convenciones de código, decisiones tomadas. Usalo cuando descubras algo del proyecto que valga la pena recordar. NO lo uses para cosas triviales o de un solo uso.", "parameters": {"type": "object", "properties": {"note": {"type": "string", "description": "el hecho a recordar, en una frase concreta"}}, "required": ["note"]}}},
             {"type": "function", "function": {"name": "check_design", "description": "VE un archivo .svg: lo rasteriza y lo revisa con un modelo de visión, devolviendo qué está visualmente mal o mejorable (proporciones, alineación, elementos fuera del lienzo, texto desbordado, colores). Usalo DESPUÉS de escribir un SVG para no dibujar a ciegas — corregí según la devolución y volvé a chequear.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "ruta al .svg a revisar"}}, "required": ["path"]}}},
             {"type": "function", "function": {"name": "social_export", "description": "Genera versiones de una imagen/diseño (png/jpg/svg) en el TAMAÑO EXACTO de cada red social, con recorte centrado, y las guarda en social/. Plataformas: instagram_post (1080x1080), instagram_story (1080x1920), facebook_post (1200x630), x_post (1600x900), linkedin_post (1200x627), tiktok, youtube_thumbnail, pinterest, whatsapp_status; o alias instagram/facebook/x/linkedin/youtube; o 'all'. El COPY y los hashtags escribilos vos aparte en social/post.md.", "parameters": {"type": "object", "properties": {"image": {"type": "string", "description": "ruta a la imagen/diseño fuente"}, "platforms": {"type": "array", "items": {"type": "string"}, "description": "lista de plataformas o formatos; default ['all']"}}, "required": ["image"]}}},
+            {"type": "function", "function": {"name": "write_doc", "description": "Crea un DOCUMENTO Word (.docx) real, que se abre en Word/LibreOffice/Google Docs. El contenido va en markdown simple: # titulo, ## subtitulo, - viñetas, **negrita**, y párrafos separados por línea en blanco. Usalo cuando pidan un documento de texto, informe, carta, presupuesto, etc.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "ruta destino, ej docs/informe.docx"}, "content": {"type": "string", "description": "contenido en markdown simple"}}, "required": ["path", "content"]}}},
             {"type": "function", "function": {"name": "web_search", "description": "Busca en internet (DuckDuckGo, sin API key) y devuelve los primeros resultados con título, URL y resumen. Usalo para info actual, documentación, precios, noticias, etc. Después podés leer una URL con web_fetch.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
             {"type": "function", "function": {"name": "web_fetch", "description": "Descarga una URL y devuelve su texto legible (quita HTML/scripts). Usalo para LEER una página, doc o API pública. Devuelve hasta ~8000 caracteres.", "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
         ]
@@ -1128,6 +1145,20 @@ class Api:
                 s._written.append(str(p))
                 s._push("wrote", {"path": str(p)})
                 return f"✅ Imagen generada con {used} → {rel}"
+            if name == "write_doc":
+                rel = s._arg_path(args)
+                if not rel:
+                    return "❌ Falta 'path' (ej: docs/informe.docx)"
+                if not rel.lower().endswith(".docx"):
+                    rel += ".docx"
+                content = args.get("content") or args.get("text") or ""
+                if not content.strip():
+                    return "❌ Falta 'content' con el texto del documento"
+                p = s._base() / rel
+                out = s._write_docx(p, content)
+                s._written.append(out)
+                s._push("sys", f"📄 Documento Word creado: {rel}")
+                return f"✅ Documento .docx creado: {rel} (se abre con Word/LibreOffice)"
             if name == "web_search":
                 return s._web_search(args.get("query") or args.get("q") or "")
             if name == "web_fetch":
@@ -1197,10 +1228,27 @@ class Api:
         except Exception as e:
             return f"❌ {e}"
 
+    @staticmethod
+    def _sf_image_models(key, skip=()):
+        """Modelos generadores de imagen disponibles HOY en SiliconFlow (el
+        catálogo cambia seguido). Para el fallback dinámico de _gen_image."""
+        try:
+            r = requests.get("https://api.siliconflow.com/v1/models",
+                             headers={"Authorization": f"Bearer {key}"}, timeout=10)
+            ids = [m["id"] for m in r.json().get("data", [])]
+        except (requests.RequestException, ValueError, KeyError):
+            return []
+        pats = ("flux", "kolors", "z-image", "qwen-image", "seedream", "sd3",
+                "stable-diffusion")
+        # los "-Edit" editan una imagen existente, no generan desde texto
+        return [i for i in ids
+                if any(p in i.lower() for p in pats)
+                and "edit" not in i.lower() and i not in skip][:3]
+
     def _gen_image(s, prompt, size="1024x1024"):
         """Genera una imagen con la primera API disponible: OpenAI (dall-e-3)
-        y si no hay key, SiliconFlow. Devuelve (bytes, proveedor_usado, error) —
-        exactamente uno de (bytes, error) es no-None."""
+        y si no hay key, SiliconFlow (con fallback dinámico al catálogo en vivo).
+        Devuelve (bytes, proveedor_usado, error) — uno de (bytes, error) es no-None."""
         err_openai = err_sf = None
         ok = s.cfg.get_api_key("openai")
         if ok:
@@ -1223,33 +1271,104 @@ class Api:
                 err_openai = f"OpenAI: {e}"
         sk = s.cfg.get_api_key("siliconflow")
         if sk:
-            try:
-                r = requests.post(
-                    "https://api.siliconflow.com/v1/images/generations",
-                    headers={"Authorization": f"Bearer {sk}", "Content-Type": "application/json"},
-                    json={"model": "black-forest-labs/FLUX.1-schnell", "prompt": prompt, "image_size": size},
-                    timeout=90)
-                if r.ok:
-                    d = (r.json().get("data") or [{}])[0]
-                    if d.get("b64_json"):
-                        return base64.b64decode(d["b64_json"]), "SiliconFlow", None
-                    if d.get("url"):
-                        img = requests.get(d["url"], timeout=60)
-                        img.raise_for_status()
-                        return img.content, "SiliconFlow", None
-                    err_sf = "SiliconFlow: respuesta sin imagen"
-                else:
+            # candidatos: el conocido primero y, si falla (el catálogo cambia seguido),
+            # los modelos de imagen REALES del catálogo en vivo
+            candidates = ["black-forest-labs/FLUX.1-schnell"]
+            for model in candidates + s._sf_image_models(sk, skip=candidates):
+                try:
+                    r = requests.post(
+                        "https://api.siliconflow.com/v1/images/generations",
+                        headers={"Authorization": f"Bearer {sk}", "Content-Type": "application/json"},
+                        json={"model": model, "prompt": prompt, "image_size": size},
+                        timeout=90)
+                    if r.ok:
+                        d = (r.json().get("data") or [{}])[0]
+                        if d.get("b64_json"):
+                            return base64.b64decode(d["b64_json"]), f"SiliconFlow ({model})", None
+                        if d.get("url"):
+                            img = requests.get(d["url"], timeout=60)
+                            img.raise_for_status()
+                            return img.content, f"SiliconFlow ({model})", None
+                        err_sf = f"SiliconFlow {model}: respuesta sin imagen"
+                        continue
                     try:
                         detail = (r.json().get("error") or {}).get("message", r.text[:200])
                     except ValueError:
                         detail = r.text[:200]
-                    err_sf = f"SiliconFlow: {detail}"
-            except requests.RequestException as e:
-                err_sf = f"SiliconFlow: {e}"
+                    err_sf = f"SiliconFlow {model}: {detail}"
+                    log(f"gen_image {model} falló: {detail}")
+                except requests.RequestException as e:
+                    err_sf = f"SiliconFlow {model}: {e}"
         if not ok and not sk:
             return None, None, ("no hay API key de OpenAI ni de SiliconFlow cargada — "
                                  "agregá una en Configuración (⚙) para generar imágenes")
         return None, None, " · ".join(x for x in (err_openai, err_sf) if x) or "no se pudo generar la imagen"
+
+    # ── documentos .docx (Word) sin dependencias: un docx es un zip con XML ──
+    @staticmethod
+    def _docx_par(text, style=None):
+        esc = (text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;"))
+        ppr = f'<w:pPr><w:pStyle w:val="{style}"/></w:pPr>' if style else ""
+        # negrita inline con **texto**
+        runs = []
+        for i, part in enumerate(re.split(r"\*\*(.+?)\*\*", esc)):
+            if not part:
+                continue
+            rpr = "<w:rPr><w:b/></w:rPr>" if i % 2 else ""
+            runs.append(f'<w:r>{rpr}<w:t xml:space="preserve">{part}</w:t></w:r>')
+        return f"<w:p>{ppr}{''.join(runs)}</w:p>"
+
+    def _write_docx(s, path, content):
+        """Convierte texto markdown-lite (#/##/### títulos, - viñetas, **negrita**,
+        párrafos separados por línea en blanco) a un .docx válido, sin librerías."""
+        import zipfile
+        body = []
+        for raw in (content or "").split("\n"):
+            ln = raw.rstrip()
+            if not ln.strip():
+                continue
+            if ln.startswith("### "):
+                body.append(s._docx_par(ln[4:], "Heading3"))
+            elif ln.startswith("## "):
+                body.append(s._docx_par(ln[3:], "Heading2"))
+            elif ln.startswith("# "):
+                body.append(s._docx_par(ln[2:], "Heading1"))
+            elif ln.lstrip().startswith(("- ", "* ", "• ")):
+                body.append(s._docx_par("• " + ln.lstrip()[2:].strip()))
+            else:
+                body.append(s._docx_par(ln))
+        doc = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+               '<w:document xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+               f'<w:body>{"".join(body)}</w:body></w:document>')
+        styles = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                  '<w:styles xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main">'
+                  '<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/>'
+                  '<w:rPr><w:b/><w:sz w:val="48"/></w:rPr></w:style>'
+                  '<w:style w:type="paragraph" w:styleId="Heading2"><w:name w:val="heading 2"/>'
+                  '<w:rPr><w:b/><w:sz w:val="36"/></w:rPr></w:style>'
+                  '<w:style w:type="paragraph" w:styleId="Heading3"><w:name w:val="heading 3"/>'
+                  '<w:rPr><w:b/><w:sz w:val="28"/></w:rPr></w:style></w:styles>')
+        ct = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+              '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
+              '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
+              '<Default Extension="xml" ContentType="application/xml"/>'
+              '<Override PartName="/word/document.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.document.main+xml"/>'
+              '<Override PartName="/word/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.wordprocessingml.styles+xml"/></Types>')
+        rels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="word/document.xml"/></Relationships>')
+        drels = ('<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
+                 '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
+                 '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/></Relationships>')
+        p = Path(path)
+        p.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(p, "w", zipfile.ZIP_DEFLATED) as z:
+            z.writestr("[Content_Types].xml", ct)
+            z.writestr("_rels/.rels", rels)
+            z.writestr("word/_rels/document.xml.rels", drels)
+            z.writestr("word/document.xml", doc)
+            z.writestr("word/styles.xml", styles)
+        return str(p)
 
     def _check_written(s):
         """Verifica la sintaxis de los archivos escritos por el agente en este turno.
@@ -1496,18 +1615,76 @@ class Api:
                 break
         return out
 
+    def _bing_html(s, q):
+        """Segundo motor: Bing HTML (aguanta mucho mejor el scraping que DDG).
+        Devuelve lista de (titulo, url, snippet)."""
+        try:
+            r = requests.get("https://www.bing.com/search",
+                             params={"q": q, "count": 10, "setlang": "es"},
+                             headers=s._UA, timeout=15)
+        except requests.RequestException:
+            return []
+        if r.status_code != 200:
+            return []
+        out = []
+        # cada resultado orgánico viene en <li class="b_algo"> con <h2><a href>
+        for m in re.finditer(
+                r'<li class="b_algo".*?<h2[^>]*><a[^>]*href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a></h2>(?P<rest>.*?)</li>',
+                r.text, re.DOTALL):
+            href = _html.unescape(m.group("href"))
+            title = _html.unescape(re.sub(r"<[^>]+>", "", m.group("title"))).strip()
+            sm = re.search(r"<p[^>]*>(.*?)</p>", m.group("rest"), re.DOTALL)
+            snip = _html.unescape(re.sub(r"<[^>]+>", "", sm.group(1))).strip() if sm else ""
+            if title and href.startswith("http"):
+                out.append((title, href, snip))
+            if len(out) >= 8:
+                break
+        return out
+
+    def _mojeek_html(s, q):
+        """Tercer motor: Mojeek (índice propio, tolerante al scraping)."""
+        try:
+            r = requests.get("https://www.mojeek.com/search",
+                             params={"q": q}, headers=s._UA, timeout=15)
+        except requests.RequestException:
+            return []
+        if r.status_code != 200:
+            return []
+        out = []
+        for m in re.finditer(r'<h2><a href="(?P<href>[^"]+)"[^>]*>(?P<title>.*?)</a>',
+                             r.text, re.DOTALL):
+            href = _html.unescape(m.group("href"))
+            title = _html.unescape(re.sub(r"<[^>]+>", "", m.group("title"))).strip()
+            sm = re.search(r'<p class="s">(.*?)</p>', r.text[m.end():m.end() + 1500], re.DOTALL)
+            snip = _html.unescape(re.sub(r"<[^>]+>", "", sm.group(1))).strip() if sm else ""
+            if title and href.startswith("http"):
+                out.append((title, href, snip))
+            if len(out) >= 8:
+                break
+        return out
+
+    _search_cache = {}   # query → (timestamp, resultado) — no martillar los motores
+
     def _web_search(s, query):
-        """Busca en internet sin API key: DuckDuckGo HTML y, si está bloqueado o
-        vacío, la API de instant answers."""
+        """Busca en internet sin API key. Cadena de motores: DuckDuckGo HTML →
+        Bing HTML → Mojeek → instant answers de DDG. Cachea 5 min por consulta
+        para no gatillar límites de peticiones con búsquedas repetidas."""
         q = (query or "").strip()
         if not q:
             return "❌ Falta la búsqueda (query)"
-        res = s._ddg_html(q) or s._ddg_instant(q)
+        hit = s._search_cache.get(q.lower())
+        if hit and time.time() - hit[0] < 300:
+            return hit[1]
+        res = s._ddg_html(q) or s._bing_html(q) or s._mojeek_html(q) or s._ddg_instant(q)
         if not res:
-            return (f"(no obtuve resultados web para «{q}» — el buscador puede estar "
-                    "limitando peticiones ahora. Si sabés una URL, leela directo con web_fetch.)")
-        return "\n".join(
+            return (f"(no obtuve resultados web para «{q}» en ningún motor — puede ser "
+                    "un tema de red. Si sabés una URL, leela directo con web_fetch.)")
+        out = "\n".join(
             f"• {t}\n  {u}" + (f"\n  {sn[:200]}" if sn else "") for t, u, sn in res)
+        s._search_cache[q.lower()] = (time.time(), out)
+        if len(s._search_cache) > 60:
+            s._search_cache.pop(next(iter(s._search_cache)))
+        return out
 
     def _web_fetch(s, url):
         """Descarga una URL y devuelve su texto legible (sin HTML/scripts)."""
@@ -1673,6 +1850,7 @@ class Api:
         s._written = []
         s._checkpoint = {}   # arranca el checkpoint del turno
         s._cancel = False
+        sid0 = s.ses_id      # charla a la que pertenece ESTE turno (anti-mezcla)
         try:
             ctx = ""
             if code.strip() and not code.startswith("//"):
@@ -1977,10 +2155,13 @@ class Api:
                     "⚠ El modelo no devolvió respuesta (se quedó razonando o cortó). " \
                     "Probá de nuevo o cambiá de modelo."
             status = f"✅ {r.tokens_used}t · ${r.cost:.4f} · {r.model}" if r else "Listo"
-            # guardar el turno en memoria (solo texto limpio, robusto entre modelos)
-            s._mem.append({"role": "user", "content": msg})
-            s._mem.append({"role": "assistant", "content": text})
-            s._mem = s._mem[-s._mem_limit():]
+            # guardar el turno en memoria (solo texto limpio, robusto entre modelos).
+            # SOLO si seguimos en la misma charla: si el usuario cambió de solapa
+            # mientras el agente trabajaba, no contaminar la memoria de la otra.
+            if s.ses_id == sid0:
+                s._mem.append({"role": "user", "content": msg})
+                s._mem.append({"role": "assistant", "content": text})
+                s._mem = s._mem[-s._mem_limit():]
             # aviso de undo si el turno escribió archivos
             if s._checkpoint:
                 n = len(s._checkpoint)
@@ -2114,17 +2295,45 @@ class Api:
         threading.Thread(target=worker, daemon=True).start()
 
     # ── historial de sesiones ─────────────────────────────
-    def persist(s, role, content):
+    def persist(s, role, content, sid=None):
+        """Guarda un mensaje en el historial. `sid` opcional: la charla a la que
+        pertenece — si el usuario cambió de solapa mientras el agente trabajaba,
+        la respuesta va a SU charla original y no a la que quedó abierta (antes
+        se mezclaban las conversaciones)."""
         try:
-            s.ses_msgs.append({"role": role, "content": content,
-                               "ts": datetime.datetime.now().isoformat()})
-            (s.ses_dir / f"{s.ses_id}.json").write_text(
-                json.dumps(s.ses_msgs, indent=2, ensure_ascii=False), encoding="utf-8")
+            target = sid or s.ses_id
+            entry = {"role": role, "content": content,
+                     "ts": datetime.datetime.now().isoformat()}
+            if target == s.ses_id:
+                s.ses_msgs.append(entry)
+                msgs = s.ses_msgs
+            else:
+                f = s.ses_dir / f"{target}.json"
+                try:
+                    msgs = json.loads(f.read_text(encoding="utf-8"))
+                    if not isinstance(msgs, list):
+                        msgs = []
+                except (OSError, ValueError):
+                    msgs = []
+                msgs.append(entry)
+            (s.ses_dir / f"{target}.json").write_text(
+                json.dumps(msgs, indent=2, ensure_ascii=False), encoding="utf-8")
         except Exception:
             pass
 
+    def _new_sid(s):
+        """Id de sesión ÚNICO. El formato viejo (resolución de segundos) hacía
+        que dos charlas creadas en el mismo segundo compartieran archivo y se
+        MEZCLARAN los mensajes — la causa raíz de las conversaciones cruzadas."""
+        base = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        sid, n = base, 1
+        while (s.ses_dir / f"{sid}.json").exists() or sid == getattr(s, "ses_id", None):
+            n += 1
+            sid = f"{base}_{n}"
+        return sid
+
     def new_session(s):
-        s.ses_id = datetime.datetime.now().strftime('%Y-%m-%d_%H-%M-%S')
+        s.ses_id = s._new_sid()
         s.ses_msgs = []
         s._mem = []          # olvidar el contexto de conversación
         s._checkpoint = {}

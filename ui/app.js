@@ -233,7 +233,14 @@ async function init() {
   const st = await api.get_state();
   applyState(st);
   newTab();
-  loadChatTabs().catch(() => {});
+  await loadChatTabs().catch(() => {});
+  // retomar SOLA la última conversación: al reabrir Fidel seguís donde quedaste,
+  // con el agente recordando el hilo (antes arrancaba con memoria vacía y decía
+  // "no tengo contexto de una sesión previa")
+  try {
+    const last = (S.chats || []).find(c => c.n > 0);
+    if (last) await resume(last.id);
+  } catch (e) { /* sin historial: charla nueva */ }
   bind();
   restorePanelSizes();
   initSplitters();
@@ -267,6 +274,7 @@ function setWs(d) {
 
 const SVG_RE = /\.svg$/i;
 const IMG_RE = /\.(png|jpe?g|gif|webp|bmp)$/i;
+const DOC_RE = /\.(docx|pdf)$/i;   // se abren con su app (Word, visor PDF)
 
 async function onWrote(path, range) {
   const r = await api.refresh_tree();
@@ -280,6 +288,7 @@ async function onWrote(path, range) {
     await openImage(path, true);
     return;
   }
+  if (DOC_RE.test(path)) return;    // .docx/.pdf: quedan en el árbol, clic los abre
   await openFile(path, range);   // mostrar lo que editó, resaltando el cambio en vivo
   // si el agente generó una página web, registrarla como artefacto y mostrarla en vivo
   if (/\.html?$/i.test(path)) {
@@ -411,6 +420,13 @@ function bind() {
   // visor de artefactos
   $("#artClose").onclick = closeArtifacts;
   $("#artReload").onclick = paintArtifact;
+  $("#artPrev").onclick = () => galleryNav(-1);
+  $("#artNext").onclick = () => galleryNav(1);
+  document.addEventListener("keydown", e => {
+    if ($("#artView").hidden || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || ""))) return;
+    if (e.key === "ArrowLeft") galleryNav(-1);
+    if (e.key === "ArrowRight") galleryNav(1);
+  });
   $("#artSel").onchange = () => { S.artIdx = +$("#artSel").value; paintArtifact(); };
   $("#artExt").onclick = async () => {
     const a = (S.artifacts || [])[S.artIdx];
@@ -471,6 +487,7 @@ function bind() {
   document.addEventListener("keydown", e => {
     if (e.ctrlKey && e.key.toLowerCase() === "k") { e.preventDefault(); $("#q").focus(); }
     if (e.ctrlKey && e.key.toLowerCase() === "s") { e.preventDefault(); save(); }
+    if (e.ctrlKey && e.key.toLowerCase() === "n") { e.preventDefault(); newTab(); }
     if (e.ctrlKey && e.key === "Enter") { e.preventDefault(); run(); }
     if (e.ctrlKey && (e.key === "+" || e.key === "=")) { e.preventDefault(); applyZoom(S.zoom + 0.1); }
     if (e.ctrlKey && e.key === "-") { e.preventDefault(); applyZoom(S.zoom - 0.1); }
@@ -543,6 +560,12 @@ function renderTabs() {
     el.onauxclick = e => { if (e.button === 1) closeTab(t.id); };
     bar.appendChild(el);
   }
+  // ＋ archivo nuevo, siempre al final de las solapas
+  const plus = document.createElement("div");
+  plus.className = "tab tab-plus"; plus.title = "Archivo nuevo (Ctrl+N)";
+  plus.textContent = "+";
+  plus.onclick = () => newTab();
+  bar.appendChild(plus);
 }
 
 /* ── árbol ── */
@@ -595,6 +618,11 @@ async function pickWs() {
 async function openFile(path, range) {
   if (SVG_RE.test(path)) return openDesign(path);  // vectores → entorno de diseño
   if (IMG_RE.test(path)) return openImage(path);   // imágenes → visor, no al editor
+  if (DOC_RE.test(path)) {                          // .docx/.pdf → su app (Word…)
+    const r = await api.open_external(path);
+    if (r && r.error) sysMsg("❌ No pude abrirlo: " + r.error);
+    return;
+  }
   const r = await api.open_file(path);
   if (r.error) return sysMsg("❌ " + r.error);
   const existed = S.tabs.find(t => t.id === r.path);
@@ -638,6 +666,28 @@ async function openImage(path, alsoChat) {
   addArtifact(name, html, path);
   showArtifacts();
   if (alsoChat) chatImage(r.data_url, name);
+}
+
+/* ── galería: navegar con ‹ › entre todas las imágenes del proyecto ── */
+function treeImages() {
+  const out = [];
+  const walk = (items) => (items || []).forEach(it => {
+    if (it.dir) walk(it.children);
+    else if (IMG_RE.test(it.name) || SVG_RE.test(it.name)) out.push(it.path);
+  });
+  walk(S.tree);
+  return out;
+}
+async function galleryNav(dir) {
+  const imgs = treeImages();
+  if (!imgs.length) return setStatus("(no hay imágenes en el proyecto)");
+  const cur = (S.artifacts || [])[S.artIdx];
+  let i = cur ? imgs.indexOf(cur.path) : -1;
+  i = i === -1 ? 0 : (i + dir + imgs.length) % imgs.length;
+  const p = imgs[i];
+  setStatus(`🖼 ${i + 1}/${imgs.length}`);
+  if (SVG_RE.test(p)) { closeArtifacts(); await openDesign(p); }
+  else await openImage(p);
 }
 
 async function openDialog() {
@@ -726,7 +776,7 @@ function startThinking() {
   S.thinkTimer = setInterval(tick, 1000);
 }
 function stopThinking() { clearInterval(S.thinkTimer); S.thinkTimer = null; }
-function persist(role, content) { api && api.persist(role, content); }
+function persist(role, content, sid) { api && api.persist(role, content, sid || null); }
 
 function userMsg(text, imgDataUrl) {
   const d = document.createElement("div");
@@ -891,8 +941,10 @@ async function send() {
   if (!msg && !img) return;
   inp.value = "";
   if (msg.startsWith("/")) return command(msg);
+  const sid = S.chatId;   // charla de ESTE turno: si cambiás de solapa mientras
+                          // el agente trabaja, la respuesta se guarda en la suya
   userMsg(msg, img ? `data:${img.mime};base64,${img.data}` : null);
-  persist("user", msg || "(imagen adjunta)");
+  persist("user", msg || "(imagen adjunta)", sid);
   clearAttachedImage();
   const p = S.providers.find(x => x.name === $("#selProv").value);
   if (!p || (!p.has_key && p.name !== "custom")) {
@@ -907,8 +959,8 @@ async function send() {
     stopThinking();
     planDone();
     // si vino por streaming, la burbuja ya se armó con los eventos agent_*
-    if (r && r.streamed) { persist("Fidel", r.full || ""); }
-    else if (r && r.text) { agentMsg(r.text); persist("Fidel", r.text); }
+    if (r && r.streamed) { persist("Fidel", r.full || "", sid); }
+    else if (r && r.text) { agentMsg(r.text); persist("Fidel", r.text, sid); }
     if (r && r.status) setStatus(r.status);
   } catch (e) {
     stopThinking();
@@ -1387,9 +1439,14 @@ async function openDesign(path) {
   DZ.path = path; DZ.sel = null;
   $("#dzTitle").textContent = r.name || path.split(/[\\/]/).pop();
   const cv = $("#dzCanvas");
-  cv.innerHTML = r.svg;
-  const svg = cv.querySelector("svg");
-  if (svg && !svg.getAttribute("width")) svg.style.width = "min(80vw, 900px)";
+  // NO usar innerHTML: adentro del lienzo viven #dzHandle y #dzPin — pisarlos
+  // rompía todo el editor ("Cannot set properties of null"). Solo cambiar el svg.
+  cv.querySelectorAll("svg").forEach(n => n.remove());
+  const tmp = document.createElement("div"); tmp.innerHTML = r.svg;
+  const svg = tmp.querySelector("svg");
+  if (!svg) return sysMsg("❌ El archivo no tiene un <svg> válido: " + path);
+  cv.insertBefore(svg, $("#dzHandle"));
+  if (!svg.getAttribute("width")) svg.style.width = "min(80vw, 900px)";
   DZ.zoom = 1; dzApplyZoom();
   $("#dzProps").hidden = true; $("#dzEmpty").hidden = false;
   $("#dzHandle").hidden = true;

@@ -181,6 +181,8 @@ header {
   color: var(--txt); font-weight: 500;
 }
 .tab .mdot { width: 6px; height: 6px; border-radius: 99px; background: var(--red); }
+.tab-plus { padding: 7px 11px; font-size: 15px; line-height: 1; color: var(--faint); }
+.tab-plus:hover { color: var(--txt); background: var(--panel2); border-radius: 9px; }
 .tab .x { color: var(--faint); font-size: 11px; margin-left: 2px; }
 .tab .x:hover { color: var(--txt); }
 .cmwrap { flex: 1; min-height: 0; }
