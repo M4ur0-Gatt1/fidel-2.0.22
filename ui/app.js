@@ -422,6 +422,10 @@ function bind() {
   $("#artReload").onclick = paintArtifact;
   $("#artPrev").onclick = () => galleryNav(-1);
   $("#artNext").onclick = () => galleryNav(1);
+  $("#imgSend").onclick = imgEdit;
+  $("#imgPromptIn").addEventListener("keydown", e => {
+    if (e.key === "Enter" && !e.shiftKey) { e.preventDefault(); imgEdit(); }
+  });
   document.addEventListener("keydown", e => {
     if ($("#artView").hidden || /^(INPUT|TEXTAREA|SELECT)$/.test((e.target.tagName || ""))) return;
     if (e.key === "ArrowLeft") galleryNav(-1);
@@ -1413,7 +1417,36 @@ function paintArtifact() {
   if (!a) return;
   $("#artTitle").textContent = a.name || "Artefacto";
   $("#artFrame").srcdoc = a.html;
+  // el dock de edición con IA solo aparece sobre imágenes reales del disco
+  $("#imgDock").hidden = !(a.path && IMG_RE.test(a.path));
   renderArtSelect();
+}
+
+/* ── editar la imagen abierta con IA (img2img): versión nueva al lado ── */
+function imgDockStatus(txt) {
+  const el = $("#imgDockStatus");
+  if (!txt) { el.hidden = true; el.textContent = ""; return; }
+  el.hidden = false; el.textContent = txt;
+}
+async function imgEdit() {
+  const a = (S.artifacts || [])[S.artIdx];
+  const ta = $("#imgPromptIn");
+  const prompt = ta.value.trim();
+  if (!a || !a.path || !prompt || S.imgBusy) return;
+  ta.value = "";
+  S.imgBusy = true;
+  imgDockStatus("🎨 Editando la imagen con IA (puede tardar ~medio minuto)…");
+  try {
+    const r = await api.edit_image(a.path, prompt);
+    if (r && r.error) { imgDockStatus("❌ " + r.error); return; }
+    imgDockStatus("✅ Versión nueva: " + (r.name || "") + " — la original queda intacta. ‹ › para comparar.");
+    try { S.tree = (await api.refresh_tree()).tree; renderTree(); } catch (e) { /* */ }
+    await openImage(r.path);
+  } catch (e) {
+    imgDockStatus("❌ " + (e.message || e));
+  } finally {
+    S.imgBusy = false;
+  }
 }
 function showArtifacts() {
   if (!(S.artifacts || []).length) { sysMsg("Todavía no hay artefactos — pedile al agente una página o app web, o abrí un .html y tocá ▶"); return; }
@@ -1570,37 +1603,57 @@ function dzWritePos(el, base, dx, dy) {
   }
 }
 
-/* tirador de resize: cambia tamaño según el tipo de elemento */
+/* tirador de resize — funciona con CUALQUIER elemento (paths y grupos incluidos):
+   arrastrar = agrandar/achicar PROPORCIONAL · con Shift = DEFORMAR (estirar).
+   Formas con atributos nativos se escalan por atributo; el resto (path, polygon,
+   g…) se escala con transform alrededor de su propio centro. */
 function dzHandleDown(e) {
   if (!DZ.sel) return;
   e.preventDefault(); e.stopPropagation();
   const el = DZ.sel, t = el.tagName.toLowerCase();
   const start = dzToUser(e.clientX, e.clientY);
+  // bbox del elemento en unidades de usuario (para factores de escala y centro)
+  const bb = el.getBoundingClientRect();
+  const p1 = dzToUser(bb.left, bb.top), p2 = dzToUser(bb.right, bb.bottom);
+  const w0 = Math.max(1, p2.x - p1.x), h0 = Math.max(1, p2.y - p1.y);
+  // ancla del escalado en coordenadas LOCALES del elemento (getBBox ignora su
+  // propio transform) — si usáramos las del lienzo, escalar algo ya movido lo correría
+  let lb = null; try { lb = el.getBBox(); } catch (err) { /* sin bbox: raro */ }
+  const cx0 = lb ? lb.x + lb.width / 2 : (p1.x + p2.x) / 2;
+  const cy0 = lb ? lb.y + lb.height / 2 : (p1.y + p2.y) / 2;
   const b = {
     w: +el.getAttribute("width") || 0, h: +el.getAttribute("height") || 0,
     r: +el.getAttribute("r") || 0, rx: +el.getAttribute("rx") || 0, ry: +el.getAttribute("ry") || 0,
     fs: parseFloat(dzGet(el, "font-size", "fontSize")) || 20,
-    cx: +el.getAttribute("cx") || 0, cy: +el.getAttribute("cy") || 0,
+    x1: +el.getAttribute("x1") || 0, y1: +el.getAttribute("y1") || 0,
     x2: +el.getAttribute("x2") || 0, y2: +el.getAttribute("y2") || 0,
+    tr: el.getAttribute("transform") || "",
   };
   const move = (ev) => {
     const p = dzToUser(ev.clientX, ev.clientY);
     const dx = p.x - start.x, dy = p.y - start.y;
+    const deform = ev.shiftKey;
+    // factores: proporcional usa el mismo k en ambos ejes
+    let kx = Math.max(0.05, 1 + dx / w0), ky = Math.max(0.05, 1 + dy / h0);
+    if (!deform) { const k = Math.max(0.05, 1 + (dx + dy) / (w0 + h0)); kx = ky = k; }
     if (t === "rect" || t === "image") {
-      el.setAttribute("width", Math.max(1, Math.round(b.w + dx)));
-      el.setAttribute("height", Math.max(1, Math.round(b.h + dy)));
+      el.setAttribute("width", Math.max(1, Math.round(b.w * kx)));
+      el.setAttribute("height", Math.max(1, Math.round(b.h * ky)));
     } else if (t === "circle") {
-      el.setAttribute("r", Math.max(1, Math.round(b.r + Math.max(dx, dy))));
+      el.setAttribute("r", Math.max(1, Math.round(b.r * kx)));
     } else if (t === "ellipse") {
-      el.setAttribute("rx", Math.max(1, Math.round(b.rx + dx)));
-      el.setAttribute("ry", Math.max(1, Math.round(b.ry + dy)));
-    } else if (t === "text") {
-      el.setAttribute("font-size", Math.max(4, Math.round(b.fs + dy)));
+      el.setAttribute("rx", Math.max(1, Math.round(b.rx * kx)));
+      el.setAttribute("ry", Math.max(1, Math.round(b.ry * ky)));
+    } else if (t === "text" || t === "tspan") {
+      el.setAttribute("font-size", Math.max(4, Math.round(b.fs * (deform ? ky : kx))));
     } else if (t === "line") {
-      el.setAttribute("x2", Math.round(b.x2 + dx));
-      el.setAttribute("y2", Math.round(b.y2 + dy));
+      // escalar la punta alrededor del origen de la línea
+      el.setAttribute("x2", Math.round(b.x1 + (b.x2 - b.x1) * kx));
+      el.setAttribute("y2", Math.round(b.y1 + (b.y2 - b.y1) * ky));
     } else {
-      return;   // otros: usar el inspector
+      // path/polygon/g/etc: escala real via transform, anclada al centro
+      const scale = ` translate(${(cx0 * (1 - kx)).toFixed(2)} ${(cy0 * (1 - ky)).toFixed(2)}) scale(${kx.toFixed(4)} ${ky.toFixed(4)})`;
+      el.setAttribute("transform", (b.tr ? b.tr + " " : "") + scale.trim());
     }
     dzPositionHandle();
   };

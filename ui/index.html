@@ -167,6 +167,14 @@
     <button class="ibtn" id="artClose" title="Cerrar (Esc)"><svg class="ico"><use href="#i-x"/></svg></button>
   </div>
   <iframe id="artFrame" sandbox="allow-scripts allow-forms allow-modals allow-popups"></iframe>
+  <!-- dock de edición con IA: pedirle cambios a la imagen abierta (img2img) -->
+  <div class="dz-dock" id="imgDock" hidden>
+    <div class="dz-dock-status" id="imgDockStatus" hidden></div>
+    <div class="dz-dock-in">
+      <textarea id="imgPromptIn" rows="1" placeholder="Pedile un cambio a esta imagen… ej: «cambiá el fondo a azul», «convertila en acuarela»" spellcheck="false"></textarea>
+      <button class="send" id="imgSend"><svg class="ico"><use href="#i-arrow"/></svg></button>
+    </div>
+  </div>
 </div>
 
 <!-- Entorno de diseño: SVG vivo + inspector por elemento (vectores + tipografía) -->
@@ -195,7 +203,7 @@
   </div>
   <div class="dz-body">
     <div class="dz-canvas" id="dzCanvas">
-      <div class="dz-handle" id="dzHandle" hidden></div>
+      <div class="dz-handle" id="dzHandle" title="Arrastrá: agrandar/achicar proporcional · Shift: deformar (estirar)" hidden></div>
       <div class="dz-pin" id="dzPin" hidden>💬</div>
     </div>
     <div class="dz-code" id="dzCode" hidden>

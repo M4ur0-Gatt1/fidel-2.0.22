@@ -41,7 +41,7 @@ ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.9.0"
+FIDEL_VERSION = "2.10.0"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -53,7 +53,7 @@ DEFAULT_EXPECTED = "2, 3, 5, 7, 11, 13, 17, 19, 23, 29"
 DEFAULT_SP = ("Eres Fidel, programador senior. Tienes HERRAMIENTAS: read_file, "
               "write_file, edit_file, exec_cmd, run_code, list_files, search_code, "
               "git, ssh_exec, scp_upload, generate_image, remember, check_design, social_export, "
-              "web_search, web_fetch, write_doc. Usalas y ACTUA directo, sin pedir permiso. "
+              "web_search, web_fetch, write_doc, edit_image. Usalas y ACTUA directo, sin pedir permiso. "
               "Para documentos de texto (informes, cartas, presupuestos) usa write_doc: "
               "crea un .docx real que se abre en Word. "
               "Tenes INTERNET: si necesitas info actual, documentacion, precios o algo que no sabes, "
@@ -71,7 +71,13 @@ DEFAULT_SP = ("Eres Fidel, programador senior. Tienes HERRAMIENTAS: read_file, "
               "el usuario selecciona y edita cada elemento. Usa SVG limpio: viewBox "
               "explicito y TODO dentro de el; un elemento por forma/texto con "
               "fill/stroke/font-family explicitos; alinea y espacia prolijo; para texto "
-              "usa text-anchor y evita que se desborde o se corte. NO dibujes a ciegas: "
+              "usa text-anchor y evita que se desborde o se corte. Se AMBICIOSO con la "
+              "calidad visual: usa <path> con curvas bezier para formas organicas, "
+              "<linearGradient>/<radialGradient> en <defs> para volumen y luz, "
+              "opacity para sombras suaves, y <g> para agrupar partes logicas — un "
+              "buen diseno tiene profundidad, no solo rectangulos planos. "
+              "Para editar una FOTO o imagen raster existente usa edit_image con el "
+              "pedido en lenguaje natural. NO dibujes a ciegas: "
               "despues de escribir un SVG usa check_design para VERLO (lo rasteriza y lo "
               "revisa un modelo de vision) y corregi segun la devolucion antes de darlo por listo. "
               "Para un POSTEO de redes sociales: 1) crea/consegui la imagen o diseno base; "
@@ -965,6 +971,7 @@ class Api:
             {"type": "function", "function": {"name": "check_design", "description": "VE un archivo .svg: lo rasteriza y lo revisa con un modelo de visión, devolviendo qué está visualmente mal o mejorable (proporciones, alineación, elementos fuera del lienzo, texto desbordado, colores). Usalo DESPUÉS de escribir un SVG para no dibujar a ciegas — corregí según la devolución y volvé a chequear.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "ruta al .svg a revisar"}}, "required": ["path"]}}},
             {"type": "function", "function": {"name": "social_export", "description": "Genera versiones de una imagen/diseño (png/jpg/svg) en el TAMAÑO EXACTO de cada red social, con recorte centrado, y las guarda en social/. Plataformas: instagram_post (1080x1080), instagram_story (1080x1920), facebook_post (1200x630), x_post (1600x900), linkedin_post (1200x627), tiktok, youtube_thumbnail, pinterest, whatsapp_status; o alias instagram/facebook/x/linkedin/youtube; o 'all'. El COPY y los hashtags escribilos vos aparte en social/post.md.", "parameters": {"type": "object", "properties": {"image": {"type": "string", "description": "ruta a la imagen/diseño fuente"}, "platforms": {"type": "array", "items": {"type": "string"}, "description": "lista de plataformas o formatos; default ['all']"}}, "required": ["image"]}}},
             {"type": "function", "function": {"name": "write_doc", "description": "Crea un DOCUMENTO Word (.docx) real, que se abre en Word/LibreOffice/Google Docs. El contenido va en markdown simple: # titulo, ## subtitulo, - viñetas, **negrita**, y párrafos separados por línea en blanco. Usalo cuando pidan un documento de texto, informe, carta, presupuesto, etc.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "ruta destino, ej docs/informe.docx"}, "content": {"type": "string", "description": "contenido en markdown simple"}}, "required": ["path", "content"]}}},
+            {"type": "function", "function": {"name": "edit_image", "description": "EDITA una imagen existente (png/jpg/webp) con IA según un pedido en lenguaje natural (ej: 'cambiá el fondo a azul', 'sacale el texto', 'convertila en acuarela'). Guarda una VERSIÓN nueva al lado (no pisa la original). Requiere key de SiliconFlow.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "ruta a la imagen a editar"}, "prompt": {"type": "string", "description": "qué cambiar, concreto"}}, "required": ["path", "prompt"]}}},
             {"type": "function", "function": {"name": "web_search", "description": "Busca en internet (DuckDuckGo, sin API key) y devuelve los primeros resultados con título, URL y resumen. Usalo para info actual, documentación, precios, noticias, etc. Después podés leer una URL con web_fetch.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
             {"type": "function", "function": {"name": "web_fetch", "description": "Descarga una URL y devuelve su texto legible (quita HTML/scripts). Usalo para LEER una página, doc o API pública. Devuelve hasta ~8000 caracteres.", "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
         ]
@@ -1145,6 +1152,14 @@ class Api:
                 s._written.append(str(p))
                 s._push("wrote", {"path": str(p)})
                 return f"✅ Imagen generada con {used} → {rel}"
+            if name == "edit_image":
+                rel = s._arg_path(args)
+                if not rel:
+                    return "❌ Falta 'path' a la imagen"
+                r = s.edit_image(rel, args.get("prompt") or "")
+                if r.get("error"):
+                    return f"❌ {r['error']}"
+                return f"✅ Imagen editada → {r['name']} (versión nueva, la original queda intacta)"
             if name == "write_doc":
                 rel = s._arg_path(args)
                 if not rel:
@@ -1244,6 +1259,65 @@ class Api:
         return [i for i in ids
                 if any(p in i.lower() for p in pats)
                 and "edit" not in i.lower() and i not in skip][:3]
+
+    def _edit_image_api(s, img_path, prompt):
+        """Edita una imagen EXISTENTE con IA (img2img): se la manda a
+        Qwen-Image-Edit de SiliconFlow junto al pedido y devuelve la nueva.
+        Devuelve (bytes, error)."""
+        sk = s.cfg.get_api_key("siliconflow")
+        if not sk:
+            return None, ("editar imágenes necesita la API key de SiliconFlow "
+                          "cargada en Configuración (⚙)")
+        p = Path(img_path)
+        mime = s.IMG_MIME.get(p.suffix.lower())
+        if not mime:
+            return None, f"formato no soportado: {p.suffix} (png/jpg/webp)"
+        try:
+            b64 = base64.b64encode(p.read_bytes()).decode("ascii")
+        except OSError as e:
+            return None, str(e)
+        try:
+            r = requests.post(
+                "https://api.siliconflow.com/v1/images/generations",
+                headers={"Authorization": f"Bearer {sk}", "Content-Type": "application/json"},
+                json={"model": "Qwen/Qwen-Image-Edit", "prompt": prompt,
+                      "image": f"data:{mime};base64,{b64}"},
+                timeout=150)
+            if not r.ok:
+                try:
+                    detail = (r.json().get("error") or {}).get("message", r.text[:200])
+                except ValueError:
+                    detail = r.text[:200]
+                return None, f"Qwen-Image-Edit: {detail}"
+            d = (r.json().get("images") or r.json().get("data") or [{}])[0]
+            if d.get("b64_json"):
+                return base64.b64decode(d["b64_json"]), None
+            if d.get("url"):
+                img = requests.get(d["url"], timeout=90)
+                img.raise_for_status()
+                return img.content, None
+            return None, "respuesta sin imagen"
+        except requests.RequestException as e:
+            return None, str(e)
+
+    def edit_image(s, path, prompt):
+        """js_api + tool: edita la imagen y guarda una VERSIÓN nueva al lado
+        (no pisa la original). Devuelve {path} o {error}."""
+        p = Path(path) if os.path.isabs(str(path)) else s._base() / str(path)
+        if not p.exists():
+            return {"error": f"No existe: {path}"}
+        data, err = s._edit_image_api(str(p), (prompt or "").strip())
+        if err:
+            return {"error": err}
+        # versionar: foto.png → foto_v2.png, foto_v3.png…
+        n, out = 2, p.with_name(f"{p.stem}_v2.png")
+        while out.exists():
+            n += 1
+            out = p.with_name(f"{p.stem}_v{n}.png")
+        out.write_bytes(data)
+        s._written.append(str(out))
+        s._push("wrote", {"path": str(out)})
+        return {"path": str(out), "name": out.name}
 
     def _gen_image(s, prompt, size="1024x1024"):
         """Genera una imagen con la primera API disponible: OpenAI (dall-e-3)
@@ -1910,6 +1984,21 @@ class Api:
             ci = 0
             if chain:
                 s.prov = s._mk_provider(*chain[0])
+            # imagen adjunta + modelo sin visión → cambiar SOLO este turno a un
+            # modelo que VEA (antes fallaba o el modelo ignoraba la imagen)
+            if image and image.get("data"):
+                cur = (chain[0][1] if chain and chain[0][1] else
+                       s.cfg.get_model(s.cfg.get_active_provider()) or "")
+                looks_vision = any(k in cur.lower() for k in
+                                   ("vl", "vision", "gpt-4o", "claude", "gemini", "pixtral"))
+                if not looks_vision:
+                    vp, vtag = s._vision_target()
+                    if vp:
+                        s.prov = vp
+                        chain = [(vtag.split("/")[0], "/".join(vtag.split("/")[1:]))] + chain
+                        s._push("sys", f"🖼 Imagen adjunta → uso {vtag} para este mensaje (tu modelo no ve imágenes)")
+                    else:
+                        s._push("sys", "⚠ Tu modelo no ve imágenes y no hay ninguno con visión configurado — la imagen puede ser ignorada")
             # Límites del agente: configurables desde ⚙ (config "agent"). La filosofía
             # de Fidel es NO ponerle techo al trabajo — el único freno real es que el
             # agente deje de AVANZAR (bucle) o el costo/límite de la API. max_steps =
