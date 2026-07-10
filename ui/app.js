@@ -274,7 +274,7 @@ function setWs(d) {
 
 const SVG_RE = /\.svg$/i;
 const IMG_RE = /\.(png|jpe?g|gif|webp|bmp)$/i;
-const DOC_RE = /\.(docx|pdf)$/i;   // se abren con su app (Word, visor PDF)
+const DOC_RE = /\.(docx|pdf|mp4|webm)$/i;   // se abren con su app (Word, PDF, reproductor)
 
 async function onWrote(path, range) {
   const r = await api.refresh_tree();

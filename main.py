@@ -37,11 +37,11 @@ CODE_EXT = {".py", ".js", ".ts", ".tsx", ".jsx", ".md", ".txt", ".json",
 # imágenes/vectores/documentos: se muestran en el árbol (para reabrirlos en el
 # visor/editor de diseño o en su app) pero NO entran al contexto ni al search
 ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
-             ".docx", ".pdf"}
+             ".docx", ".pdf", ".mp4", ".webm"}
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.10.0"
+FIDEL_VERSION = "2.11.0"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -53,7 +53,13 @@ DEFAULT_EXPECTED = "2, 3, 5, 7, 11, 13, 17, 19, 23, 29"
 DEFAULT_SP = ("Eres Fidel, programador senior. Tienes HERRAMIENTAS: read_file, "
               "write_file, edit_file, exec_cmd, run_code, list_files, search_code, "
               "git, ssh_exec, scp_upload, generate_image, remember, check_design, social_export, "
-              "web_search, web_fetch, write_doc, edit_image. Usalas y ACTUA directo, sin pedir permiso. "
+              "web_search, web_fetch, write_doc, edit_image, animate_image, generate_video. "
+              "Usalas y ACTUA directo, sin pedir permiso. "
+              "ANIMACION/storyboard/animatic: 1) crea el cuadro clave (generate_image o "
+              "un SVG); 2) para el resto de los planos MANTENE EL ESTILO usando edit_image "
+              "sobre el cuadro anterior (nunca generes de cero cada plano); 3) anima un "
+              "cuadro con animate_image describiendo el movimiento (camara y accion); "
+              "4) generate_video solo cuando no haya cuadro de referencia. "
               "Para documentos de texto (informes, cartas, presupuestos) usa write_doc: "
               "crea un .docx real que se abre en Word. "
               "Tenes INTERNET: si necesitas info actual, documentacion, precios o algo que no sabes, "
@@ -972,6 +978,8 @@ class Api:
             {"type": "function", "function": {"name": "social_export", "description": "Genera versiones de una imagen/diseño (png/jpg/svg) en el TAMAÑO EXACTO de cada red social, con recorte centrado, y las guarda en social/. Plataformas: instagram_post (1080x1080), instagram_story (1080x1920), facebook_post (1200x630), x_post (1600x900), linkedin_post (1200x627), tiktok, youtube_thumbnail, pinterest, whatsapp_status; o alias instagram/facebook/x/linkedin/youtube; o 'all'. El COPY y los hashtags escribilos vos aparte en social/post.md.", "parameters": {"type": "object", "properties": {"image": {"type": "string", "description": "ruta a la imagen/diseño fuente"}, "platforms": {"type": "array", "items": {"type": "string"}, "description": "lista de plataformas o formatos; default ['all']"}}, "required": ["image"]}}},
             {"type": "function", "function": {"name": "write_doc", "description": "Crea un DOCUMENTO Word (.docx) real, que se abre en Word/LibreOffice/Google Docs. El contenido va en markdown simple: # titulo, ## subtitulo, - viñetas, **negrita**, y párrafos separados por línea en blanco. Usalo cuando pidan un documento de texto, informe, carta, presupuesto, etc.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "ruta destino, ej docs/informe.docx"}, "content": {"type": "string", "description": "contenido en markdown simple"}}, "required": ["path", "content"]}}},
             {"type": "function", "function": {"name": "edit_image", "description": "EDITA una imagen existente (png/jpg/webp) con IA según un pedido en lenguaje natural (ej: 'cambiá el fondo a azul', 'sacale el texto', 'convertila en acuarela'). Guarda una VERSIÓN nueva al lado (no pisa la original). Requiere key de SiliconFlow.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "ruta a la imagen a editar"}, "prompt": {"type": "string", "description": "qué cambiar, concreto"}}, "required": ["path", "prompt"]}}},
+            {"type": "function", "function": {"name": "animate_image", "description": "ANIMA una imagen existente (png/jpg): imagen→video de ~5s que MANTIENE el estilo del cuadro (Wan 2.2 I2V). Ideal para storyboard/animatic: describí el movimiento ('zoom lento hacia la cara', 'las hojas se mueven con el viento', 'la cámara recorre de izquierda a derecha'). Tarda 2-4 min. Guarda un .mp4 al lado.", "parameters": {"type": "object", "properties": {"image": {"type": "string", "description": "ruta a la imagen a animar"}, "prompt": {"type": "string", "description": "qué movimiento/acción debe tener"}}, "required": ["image", "prompt"]}}},
+            {"type": "function", "function": {"name": "generate_video", "description": "Genera un VIDEO corto (~5s) desde una descripción de texto (Wan 2.2 T2V). Para mantener estilo entre planos de un storyboard preferí animate_image sobre un cuadro ya diseñado. Tarda 2-4 min. Guarda un .mp4.", "parameters": {"type": "object", "properties": {"prompt": {"type": "string", "description": "escena, estilo y movimiento de cámara"}, "path": {"type": "string", "description": "ruta destino, ej video/plano01.mp4 (opcional)"}}, "required": ["prompt"]}}},
             {"type": "function", "function": {"name": "web_search", "description": "Busca en internet (DuckDuckGo, sin API key) y devuelve los primeros resultados con título, URL y resumen. Usalo para info actual, documentación, precios, noticias, etc. Después podés leer una URL con web_fetch.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
             {"type": "function", "function": {"name": "web_fetch", "description": "Descarga una URL y devuelve su texto legible (quita HTML/scripts). Usalo para LEER una página, doc o API pública. Devuelve hasta ~8000 caracteres.", "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
         ]
@@ -1143,7 +1151,7 @@ class Api:
                 size = args.get("size") or "1024x1024"
                 rel = args.get("path") or (
                     f"assets/img_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-                img_bytes, used, err = s._gen_image(prompt, size)
+                img_bytes, used, err = s._gen_image(s._enhance_gen_prompt(prompt, "imagen"), size)
                 if err:
                     return f"❌ {err}"
                 p = s._base() / rel
@@ -1160,6 +1168,32 @@ class Api:
                 if r.get("error"):
                     return f"❌ {r['error']}"
                 return f"✅ Imagen editada → {r['name']} (versión nueva, la original queda intacta)"
+            if name == "animate_image":
+                rel = args.get("image") or s._arg_path(args)
+                if not rel:
+                    return "❌ Falta 'image' (ruta a la imagen a animar)"
+                p = Path(rel) if os.path.isabs(rel) else s._base() / rel
+                if not p.exists():
+                    return f"❌ No existe: {rel}"
+                prompt = s._enhance_gen_prompt(args.get("prompt") or "gentle cinematic motion", "video")
+                data, err = s._sf_video(prompt, image_path=str(p))
+                if err:
+                    return f"❌ {err}"
+                out = s._save_video(data, f"video/{p.stem}_anim.mp4"
+                                    if not os.path.isabs(rel) else str(Path(rel).with_suffix("")) + "_anim.mp4")
+                return f"✅ Imagen animada → {out.name} (~5s, mantiene el estilo del cuadro)"
+            if name == "generate_video":
+                prompt = (args.get("prompt") or "").strip()
+                if not prompt:
+                    return "❌ Falta 'prompt' con la escena"
+                rel = args.get("path") or f"video/video_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.mp4"
+                if not rel.lower().endswith(".mp4"):
+                    rel += ".mp4"
+                data, err = s._sf_video(s._enhance_gen_prompt(prompt, "video"))
+                if err:
+                    return f"❌ {err}"
+                out = s._save_video(data, rel)
+                return f"✅ Video generado → {rel} (~5s)"
             if name == "write_doc":
                 rel = s._arg_path(args)
                 if not rel:
@@ -1260,6 +1294,99 @@ class Api:
                 if any(p in i.lower() for p in pats)
                 and "edit" not in i.lower() and i not in skip][:3]
 
+    def _enhance_gen_prompt(s, prompt, kind="imagen"):
+        """Los modelos generativos (FLUX/Qwen/Wan) son chinos y entienden MUCHO
+        mejor un prompt detallado en inglés que un pedido suelto en español.
+        Reescribe el pedido preservando toda la intención de estilo. Desactivable
+        con agent.enhance_prompts=false. Si falla, usa el original."""
+        if not s.cfg.data.get("agent", {}).get("enhance_prompts", True):
+            return prompt
+        if not s.prov or len(prompt) > 900:
+            return prompt
+        try:
+            r = s.prov.chat(
+                [{"role": "user", "content":
+                  f"Rewrite this {('video' if 'video' in kind else 'image')} generation "
+                  "request as ONE detailed English prompt optimized for diffusion/video "
+                  "models. Include: subject, art style, lighting, composition, colors"
+                  + (", camera movement and motion" if "video" in kind else "") +
+                  ". PRESERVE every stylistic intent of the original. "
+                  "Reply ONLY with the prompt, no quotes.\n\n"
+                  f"Request (Spanish): {prompt}"}],
+                system_prompt="You write world-class generation prompts for diffusion and video models.",
+                temperature=0.4, max_tokens=280)
+            out = re.sub(r"<think>.*?</think>", "", r.content or "", flags=re.DOTALL).strip().strip('"')
+            if 15 < len(out) < 1500:
+                s._push("sys", f"🈯 Prompt optimizado ({kind}): {out[:150]}…")
+                return out
+        except Exception as e:
+            log(f"enhance_prompt falló: {e}")
+        return prompt
+
+    # ── video (Wan 2.2 en SiliconFlow): texto→video y IMAGEN→video (animar) ──
+    VIDEO_T2V = "Wan-AI/Wan2.2-T2V-A14B"
+    VIDEO_I2V = "Wan-AI/Wan2.2-I2V-A14B"
+
+    def _sf_video(s, prompt, image_path=None, size="1280x720"):
+        """Genera un video (async: submit + poll). Con image_path ANIMA esa
+        imagen manteniendo su estilo (I2V). Devuelve (bytes_mp4, error)."""
+        sk = s.cfg.get_api_key("siliconflow")
+        if not sk:
+            return None, "video necesita la API key de SiliconFlow (⚙)"
+        hdr = {"Authorization": f"Bearer {sk}", "Content-Type": "application/json"}
+        body = {"model": s.VIDEO_I2V if image_path else s.VIDEO_T2V,
+                "prompt": prompt, "image_size": size}   # image_size es OBLIGATORIO
+        if image_path:
+            p = Path(image_path)
+            mime = s.IMG_MIME.get(p.suffix.lower())
+            if not mime:
+                return None, f"formato no soportado para animar: {p.suffix}"
+            try:
+                body["image"] = f"data:{mime};base64," + \
+                    base64.b64encode(p.read_bytes()).decode("ascii")
+            except OSError as e:
+                return None, str(e)
+        try:
+            r = requests.post("https://api.siliconflow.com/v1/video/submit",
+                              headers=hdr, json=body, timeout=60)
+            rid = r.json().get("requestId")
+        except (requests.RequestException, ValueError) as e:
+            return None, f"submit falló: {e}"
+        if not rid:
+            return None, f"submit sin requestId: {r.text[:200]}"
+        s._push("sys", "🎬 Generando video (~2-4 min)… te aviso cuando esté.")
+        for i in range(60):                     # hasta 10 minutos
+            time.sleep(10)
+            try:
+                d = requests.post("https://api.siliconflow.com/v1/video/status",
+                                  headers=hdr, json={"requestId": rid}, timeout=30).json()
+            except (requests.RequestException, ValueError):
+                continue
+            st = d.get("status")
+            if i % 6 == 5:
+                s._push("sys", f"🎬 Video: {st}… ({(i + 1) * 10}s)")
+            if st == "Succeed":
+                vids = (d.get("results") or {}).get("videos") or []
+                if not vids or not vids[0].get("url"):
+                    return None, "terminó sin URL de video"
+                try:
+                    v = requests.get(vids[0]["url"], timeout=120)
+                    v.raise_for_status()
+                    return v.content, None
+                except requests.RequestException as e:
+                    return None, f"descarga falló: {e}"
+            if st == "Failed":
+                return None, f"la generación falló{': ' + d.get('reason') if d.get('reason') else ' (probá reformular el pedido)'}"
+        return None, "timeout: el video tardó más de 10 minutos"
+
+    def _save_video(s, data, rel):
+        out = s._base() / rel
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(data)
+        s._written.append(str(out))
+        s._push("wrote", {"path": str(out)})
+        return out
+
     def _edit_image_api(s, img_path, prompt):
         """Edita una imagen EXISTENTE con IA (img2img): se la manda a
         Qwen-Image-Edit de SiliconFlow junto al pedido y devuelve la nueva.
@@ -1306,7 +1433,7 @@ class Api:
         p = Path(path) if os.path.isabs(str(path)) else s._base() / str(path)
         if not p.exists():
             return {"error": f"No existe: {path}"}
-        data, err = s._edit_image_api(str(p), (prompt or "").strip())
+        data, err = s._edit_image_api(str(p), s._enhance_gen_prompt((prompt or "").strip(), "edición de imagen"))
         if err:
             return {"error": err}
         # versionar: foto.png → foto_v2.png, foto_v3.png…
