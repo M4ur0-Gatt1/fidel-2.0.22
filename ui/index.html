@@ -230,10 +230,20 @@
   </div>
   <!-- línea de tiempo de animación: cuadros nombre_f001.svg, _f002… -->
   <div class="dz-timeline" id="dzTimeline" hidden>
-    <button class="ibtn" id="tlPlay" title="Reproducir / parar (12 fps)">▶</button>
-    <button class="ibtn active" id="tlOnion" title="Papel cebolla: cuadro anterior transparentado">🧅</button>
+    <button class="ibtn" id="tlFirst" title="Primer cuadro">⏮</button>
+    <button class="ibtn" id="tlPrev" title="Cuadro anterior (,)">◀</button>
+    <button class="ibtn" id="tlPlay" title="Reproducir / parar">▶</button>
+    <button class="ibtn" id="tlNext" title="Cuadro siguiente (.)">▸</button>
+    <button class="ibtn" id="tlLast" title="Último cuadro">⏭</button>
+    <input type="number" id="tlFps" value="12" min="1" max="60" title="Cuadros por segundo" class="dz-win">
+    <div class="vsep"></div>
+    <button class="ibtn active" id="tlOnion" title="Papel cebolla: anteriores en rojo, siguiente en verde">🧅</button>
+    <select id="tlSkin" class="langsel" title="Cuántos cuadros fantasma">
+      <option value="1">1</option><option value="2" selected>2</option><option value="3">3</option>
+    </select>
     <div class="tl-frames" id="tlFrames"></div>
     <button class="ibtn" id="tlAdd" title="Duplicar este cuadro → cuadro siguiente">＋</button>
+    <button class="ibtn" id="tlDel" title="Borrar este cuadro">🗑</button>
     <span class="dz-hint" id="tlInfo"></span>
   </div>
   <!-- chat/prompt del diseño: pedirle correcciones al agente sin salir del editor -->

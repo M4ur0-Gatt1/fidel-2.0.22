@@ -450,6 +450,7 @@ function bind() {
     b.onclick = () => dzSetTool(b.dataset.tool));
   $("#dzDrawColor").oninput = e => { DZ.drawColor = e.target.value; };
   $("#dzDrawW").oninput = e => { DZ.drawW = +e.target.value || 6; };
+  $("#dzProps").addEventListener("focusin", () => dzSnapshot());
   $("#dzCanvas").addEventListener("pointerdown", dzDrawDown);
   $("#dzCanvas").addEventListener("pointermove", dzDrawMove);
   $("#dzCanvas").addEventListener("pointerup", dzDrawUp);
@@ -458,6 +459,22 @@ function bind() {
   $("#dzAnim").onclick = dzAnimToggle;
   $("#tlPlay").onclick = dzAnimPlay;
   $("#tlAdd").onclick = dzFrameAdd;
+  $("#tlFirst").onclick = () => { dzAnimStopIf(); dzGoFrame(0); };
+  $("#tlPrev").onclick = () => { dzAnimStopIf(); dzGoFrame(Math.max(0, (DZ.anim ? DZ.anim.idx : 0) - 1)); };
+  $("#tlNext").onclick = () => { dzAnimStopIf(); dzGoFrame(Math.min((DZ.anim ? DZ.anim.frames.length : 1) - 1, (DZ.anim ? DZ.anim.idx : 0) + 1)); };
+  $("#tlLast").onclick = () => { dzAnimStopIf(); dzGoFrame((DZ.anim ? DZ.anim.frames.length : 1) - 1); };
+  $("#tlDel").onclick = async () => {
+    if (!DZ.anim) return;
+    if (!confirm("¿Borrar este cuadro? (no se puede deshacer)")) return;
+    const r = await api.del_frame(DZ.path);
+    if (r && r.error) return sysMsg("❌ " + r.error);
+    try { S.tree = (await api.refresh_tree()).tree; renderTree(); } catch (e) { /* */ }
+    await openDesign(r.path);
+    $("#dzTimeline").hidden = false;
+    await dzTimelineRefresh();
+    dzOnionUpdate();
+  };
+  $("#tlSkin").onchange = () => { if (DZ.anim) { DZ.anim.skin = +$("#tlSkin").value; dzOnionUpdate(); } };
   $("#tlOnion").onclick = () => {
     if (!DZ.anim) return;
     DZ.anim.onion = !DZ.anim.onion;
@@ -486,6 +503,10 @@ function bind() {
     if (e.ctrlKey && e.key.toLowerCase() === "d" && DZ.sel) {
       e.preventDefault(); dzDuplicate();
     }
+    if (e.ctrlKey && !e.shiftKey && e.key.toLowerCase() === "z") { e.preventDefault(); dzUndo(); }
+    if (e.ctrlKey && (e.key.toLowerCase() === "y" || (e.shiftKey && e.key.toLowerCase() === "z"))) { e.preventDefault(); dzRedo(); }
+    if (e.key === "," && DZ.anim) { e.preventDefault(); dzAnimStopIf(); dzGoFrame(Math.max(0, DZ.anim.idx - 1)); }
+    if (e.key === "." && DZ.anim) { e.preventDefault(); dzAnimStopIf(); dzGoFrame(Math.min(DZ.anim.frames.length - 1, DZ.anim.idx + 1)); }
     if (e.key === "Enter" && PEN) { e.preventDefault(); dzPenFinish(false); }
     if (e.key === "Escape" && PEN) {
       // cancela la pluma SIN cerrar el editor (frena el Escape global)
@@ -1505,6 +1526,7 @@ async function openDesign(path) {
   cv.insertBefore(svg, $("#dzHandle"));
   if (!svg.getAttribute("width")) svg.style.width = "min(80vw, 900px)";
   DZ.zoom = 1; dzApplyZoom();
+  DZ.undo = []; DZ.redo = [];   // pilas de deshacer por archivo
   $("#dzProps").hidden = true; $("#dzEmpty").hidden = false;
   $("#dzHandle").hidden = true;
   $("#dzCode").hidden = true;
@@ -1591,6 +1613,7 @@ function dzPointerDown(e) {
     const p = dzToUser(ev.clientX, ev.clientY);
     const dx = p.x - start.x, dy = p.y - start.y;
     if (!moved && Math.abs(dx) + Math.abs(dy) < 1) return;
+    if (!moved) dzSnapshot();                          // primer movimiento real
     moved = true;
     dzWritePos(el, base, dx, dy);
     dzPositionHandle();
@@ -1634,6 +1657,7 @@ function dzWritePos(el, base, dx, dy) {
 function dzHandleDown(e) {
   if (!DZ.sel) return;
   e.preventDefault(); e.stopPropagation();
+  dzSnapshot();
   const el = DZ.sel, t = el.tagName.toLowerCase();
   const start = dzToUser(e.clientX, e.clientY);
   // bbox del elemento en unidades de usuario (para factores de escala y centro)
@@ -1694,6 +1718,7 @@ function dzHandleDown(e) {
 function dzAddShape(kind) {
   const svg = $("#dzCanvas").querySelector("svg");
   if (!svg) return;
+  dzSnapshot();
   const vb = (svg.getAttribute("viewBox") || "0 0 1080 1080").split(/\s+/).map(Number);
   const W = vb[2] || 1080, H = vb[3] || 1080, cx = W / 2, cy = H / 2;
   const NS = "http://www.w3.org/2000/svg";
@@ -1723,6 +1748,7 @@ function dzAddShape(kind) {
 }
 function dzDeleteSelected() {
   if (!DZ.sel) return;
+  dzSnapshot();
   DZ.sel.remove(); DZ.sel = null;
   $("#dzHandle").hidden = true; $("#dzPin").hidden = true;
   $("#dzProps").hidden = true; $("#dzEmpty").hidden = false;
@@ -1733,6 +1759,7 @@ function dzMarkDirty() { DZ.dirty = true; }
 /* duplicar el elemento seleccionado (con un pequeño corrimiento para verlo) */
 function dzDuplicate() {
   if (!DZ.sel) return;
+  dzSnapshot();
   const c = DZ.sel.cloneNode(true);
   c.classList.remove("dz-sel");
   if (!c.getAttribute("class")) c.removeAttribute("class");
@@ -1764,6 +1791,7 @@ function dzDrawDown(e) {
   e.preventDefault(); e.stopPropagation();             // suprime los mouse events
   const p = dzToUser(e.clientX, e.clientY);
   if (DZ.tool === "pen") { dzPenDown(p); return; }
+  dzSnapshot();                                        // Ctrl+Z deshace el trazo
   DRAW = { pts: [[p.x, p.y, e.pressure || 0.5]], mode: DZ.tool, el: null };
   if (DZ.tool === "pencil") {
     DRAW.el = document.createElementNS(SVGNS, "path");
@@ -1786,20 +1814,25 @@ function dzDrawMove(e) {
   if (PEN && PEN.dragging) { dzPenDrag(dzToUser(e.clientX, e.clientY)); return; }
   if (!DRAW) return;
   e.preventDefault();
-  const p = dzToUser(e.clientX, e.clientY);
-  const last = DRAW.pts[DRAW.pts.length - 1];
-  const dx = p.x - last[0], dy = p.y - last[1];
-  if (dx * dx + dy * dy < 3) return;                   // umbral anti-ruido
-  const pr = (e.pointerType === "pen" && e.pressure) ? e.pressure : 0.5;
-  DRAW.pts.push([p.x, p.y, pr]);
-  if (DRAW.mode === "pencil") {
-    DRAW.el.setAttribute("d", dzSmoothPath(DRAW.pts));
-  } else {
-    const seg = document.createElementNS(SVGNS, "path");
-    seg.setAttribute("d", `M ${last[0].toFixed(1)} ${last[1].toFixed(1)} L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`);
-    seg.setAttribute("stroke-width", Math.max(0.5, (DZ.drawW || 6) * 2 * pr).toFixed(1));
-    DRAW.el.appendChild(seg);
+  // eventos coalescidos: la tableta muestrea a 100-250Hz pero el navegador
+  // agrupa — sin esto las curvas rápidas salen poligonales
+  const evs = (e.getCoalescedEvents && e.getCoalescedEvents().length)
+    ? e.getCoalescedEvents() : [e];
+  for (const ev of evs) {
+    const p = dzToUser(ev.clientX, ev.clientY);
+    const last = DRAW.pts[DRAW.pts.length - 1];
+    const dx = p.x - last[0], dy = p.y - last[1];
+    if (dx * dx + dy * dy < 1.2) continue;             // umbral fino anti-ruido
+    const pr = (ev.pointerType === "pen" && ev.pressure) ? ev.pressure : 0.5;
+    DRAW.pts.push([p.x, p.y, pr]);
+    if (DRAW.mode !== "pencil") {
+      const seg = document.createElementNS(SVGNS, "path");
+      seg.setAttribute("d", `M ${last[0].toFixed(1)} ${last[1].toFixed(1)} L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`);
+      seg.setAttribute("stroke-width", Math.max(0.5, (DZ.drawW || 6) * 2 * pr).toFixed(1));
+      DRAW.el.appendChild(seg);
+    }
   }
+  if (DRAW.mode === "pencil") DRAW.el.setAttribute("d", dzSmoothPath(DRAW.pts));
 }
 function dzDrawUp(e) {
   if (PEN && PEN.dragging) { dzPenUp(); return; }
@@ -1808,14 +1841,18 @@ function dzDrawUp(e) {
   DRAW = null;
   dzMarkDirty(); dzBuildLayers();
 }
-/* suavizado clásico: curvas cuadráticas por los puntos medios */
+/* suavizado Catmull-Rom convertido a bezier cúbicas: la curva pasa POR todos
+   los puntos con continuidad C1 — trazos fieles y orgánicos */
 function dzSmoothPath(pts) {
-  if (pts.length < 3)
-    return `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)} L ${pts[pts.length - 1][0].toFixed(1)} ${pts[pts.length - 1][1].toFixed(1)}`;
+  const n = pts.length;
+  if (n < 3)
+    return `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)} L ${pts[n - 1][0].toFixed(1)} ${pts[n - 1][1].toFixed(1)}`;
   let d = `M ${pts[0][0].toFixed(1)} ${pts[0][1].toFixed(1)}`;
-  for (let i = 1; i < pts.length - 1; i++) {
-    const mx = (pts[i][0] + pts[i + 1][0]) / 2, my = (pts[i][1] + pts[i + 1][1]) / 2;
-    d += ` Q ${pts[i][0].toFixed(1)} ${pts[i][1].toFixed(1)} ${mx.toFixed(1)} ${my.toFixed(1)}`;
+  for (let i = 0; i < n - 1; i++) {
+    const p0 = pts[Math.max(0, i - 1)], p1 = pts[i], p2 = pts[i + 1], p3 = pts[Math.min(n - 1, i + 2)];
+    const c1x = p1[0] + (p2[0] - p0[0]) / 6, c1y = p1[1] + (p2[1] - p0[1]) / 6;
+    const c2x = p2[0] - (p3[0] - p1[0]) / 6, c2y = p2[1] - (p3[1] - p1[1]) / 6;
+    d += ` C ${c1x.toFixed(1)} ${c1y.toFixed(1)} ${c2x.toFixed(1)} ${c2y.toFixed(1)} ${p2[0].toFixed(1)} ${p2[1].toFixed(1)}`;
   }
   return d;
 }
@@ -1825,6 +1862,7 @@ function dzSmoothPath(pts) {
 function dzPenDown(p) {
   const svg = $("#dzCanvas").querySelector("svg");
   if (!PEN) {
+    dzSnapshot();                                      // Ctrl+Z deshace la pluma entera
     PEN = { anchors: [], el: document.createElementNS(SVGNS, "path"), dragging: false };
     PEN.el.setAttribute("fill", "none");
     PEN.el.setAttribute("stroke", DZ.drawColor || "#E5322D");
@@ -1877,7 +1915,8 @@ async function dzAnimToggle() {
     try { S.tree = (await api.refresh_tree()).tree; renderTree(); } catch (e) { /* */ }
     await openDesign(r.path);
   }
-  DZ.anim = { frames: [], idx: 0, playing: false, onion: true, cache: {} };
+  DZ.anim = { frames: [], idx: 0, playing: false, onion: true, cache: {},
+              skin: +($("#tlSkin") && $("#tlSkin").value) || 2 };
   bar.hidden = false;
   await dzTimelineRefresh();
   dzOnionUpdate();
@@ -1896,7 +1935,7 @@ async function dzTimelineRefresh() {
     c.onclick = () => dzGoFrame(i);
     box.appendChild(c);
   });
-  $("#tlInfo").textContent = DZ.anim.frames.length + " cuadro(s) · 12 fps";
+  $("#tlInfo").textContent = DZ.anim.frames.length + " cuadro(s)";
 }
 async function dzGoFrame(i) {
   if (!DZ.anim || !DZ.anim.frames[i]) return;
@@ -1917,27 +1956,60 @@ async function dzFrameAdd() {
   await dzTimelineRefresh();
   dzOnionUpdate();
 }
-/* papel cebolla: el cuadro ANTERIOR transparentado detrás, no editable */
+/* papel cebolla estilo OpenToonz: cuadros fantasma con TINTE (rojos = los
+   anteriores, verde = el siguiente), opacidad decreciente, dibujados ENCIMA
+   (sin su fondo) para que se vean sobre cualquier lienzo. No editable. */
 function dzOnionClear() {
   document.querySelectorAll("#dzCanvas svg g.dz-onion").forEach(n => n.remove());
 }
-async function dzOnionUpdate() {
-  dzOnionClear();
-  if (!DZ.anim || !DZ.anim.onion || DZ.anim.idx <= 0) return;
-  const prev = DZ.anim.frames[DZ.anim.idx - 1];
-  const svg = $("#dzCanvas").querySelector("svg");
-  if (!prev || !svg) return;
-  const r = await api.image_data(prev);
-  if (!r || !r.svg) return;
-  const tmp = document.createElement("div"); tmp.innerHTML = r.svg;
+function dzOnionGhost(svgText, tintId, rgb, opacity) {
+  const tmp = document.createElement("div"); tmp.innerHTML = svgText;
   const psvg = tmp.querySelector("svg");
-  if (!psvg) return;
+  if (!psvg) return null;
+  // sacarle el fondo al fantasma: un rect que cubre ~todo el lienzo tapa el
+  // cuadro actual — solo queremos las líneas/formas (como niveles de OpenToonz)
+  const vb = (psvg.getAttribute("viewBox") || "0 0 1080 1080").split(/\s+/).map(Number);
+  const area = (vb[2] || 1) * (vb[3] || 1);
+  [...psvg.querySelectorAll("rect")].forEach(rc => {
+    const a = (+rc.getAttribute("width") || 0) * (+rc.getAttribute("height") || 0);
+    if (a >= area * 0.9) rc.remove();
+  });
   const g = document.createElementNS(SVGNS, "g");
   g.setAttribute("class", "dz-onion");
-  g.setAttribute("opacity", "0.3");
+  g.setAttribute("opacity", String(opacity));
   g.setAttribute("pointer-events", "none");
-  [...psvg.children].forEach(n => g.appendChild(n));
-  svg.insertBefore(g, svg.firstChild);
+  // tinte duotono via filtro (vive DENTRO del grupo → se va con él al guardar)
+  const f = document.createElementNS(SVGNS, "filter");
+  f.setAttribute("id", tintId);
+  f.innerHTML = `<feColorMatrix type="matrix" values="0.25 0.25 0.25 0 ${rgb[0]}  0.25 0.25 0.25 0 ${rgb[1]}  0.25 0.25 0.25 0 ${rgb[2]}  0 0 0 1 0"/>`;
+  g.appendChild(f);
+  const inner = document.createElementNS(SVGNS, "g");
+  inner.setAttribute("filter", `url(#${tintId})`);
+  [...psvg.children].forEach(n => inner.appendChild(n));
+  g.appendChild(inner);
+  return g;
+}
+let ONION_RUN = 0;   // token anti-carrera: navegar rápido no duplica fantasmas
+async function dzOnionUpdate() {
+  const run = ++ONION_RUN;
+  dzOnionClear();
+  if (!DZ.anim || !DZ.anim.onion) return;
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (!svg) return;
+  const skin = DZ.anim.skin || 2;
+  const jobs = [];
+  for (let k = 1; k <= skin; k++)               // anteriores: rojo, cada vez más tenue
+    if (DZ.anim.frames[DZ.anim.idx - k])
+      jobs.push({ f: DZ.anim.frames[DZ.anim.idx - k], rgb: [0.55, 0, 0], op: 0.38 / k, id: "dzTintP" + k });
+  if (DZ.anim.frames[DZ.anim.idx + 1])          // siguiente: verde
+    jobs.push({ f: DZ.anim.frames[DZ.anim.idx + 1], rgb: [0, 0.45, 0.1], op: 0.3, id: "dzTintN1" });
+  for (const j of jobs) {
+    const r = await api.image_data(j.f);
+    if (run !== ONION_RUN) return;              // vino una pasada más nueva: abortar
+    if (!r || !r.svg) continue;
+    const g = dzOnionGhost(r.svg, j.id, j.rgb, j.op);
+    if (g) svg.appendChild(g);                  // ENCIMA del cuadro actual
+  }
 }
 /* reproducir: precarga los cuadros y los cicla a 12 fps */
 async function dzAnimPlay() {
@@ -1954,6 +2026,7 @@ async function dzAnimPlay() {
   DZ.anim.playing = true;
   $("#tlPlay").textContent = "⏸";
   let i = DZ.anim.idx;
+  const fps = Math.max(1, Math.min(60, +($("#tlFps") && $("#tlFps").value) || 12));
   DZ.anim.timer = setInterval(() => {
     i = (i + 1) % DZ.anim.frames.length;
     const svgTxt = DZ.anim.cache[DZ.anim.frames[i]];
@@ -1964,8 +2037,9 @@ async function dzAnimPlay() {
       if (old && ns) { if (!ns.getAttribute("width")) ns.style.width = old.style.width || "min(80vw, 900px)"; old.replaceWith(ns); dzApplyZoom(); }
     }
     document.querySelectorAll("#tlFrames .tl-frame").forEach((c, k) => c.classList.toggle("cur", k === i));
-  }, 1000 / 12);
+  }, 1000 / fps);
 }
+function dzAnimStopIf() { if (DZ.anim && DZ.anim.playing) dzAnimStop(); }
 function dzAnimStop() {
   if (!DZ.anim || !DZ.anim.playing) return;
   clearInterval(DZ.anim.timer);
@@ -2000,19 +2074,19 @@ function dzBuildLayers() {
     const eye = document.createElement("span");
     const hidden = el.getAttribute("display") === "none";
     eye.className = "dz-eye"; eye.textContent = hidden ? "◌" : "👁"; eye.title = hidden ? "Mostrar" : "Ocultar";
-    eye.onclick = (e) => { e.stopPropagation();
+    eye.onclick = (e) => { e.stopPropagation(); dzSnapshot();
       hidden ? el.removeAttribute("display") : el.setAttribute("display", "none");
       dzMarkDirty(); dzBuildLayers(); };
     const lbl = document.createElement("span");
     lbl.className = "dz-layer-t"; lbl.textContent = dzLayerLabel(el);
     const up = document.createElement("span");
     up.className = "dz-ord"; up.textContent = "▲"; up.title = "Traer al frente";
-    up.onclick = (e) => { e.stopPropagation();
+    up.onclick = (e) => { e.stopPropagation(); dzSnapshot();
       if (el.nextElementSibling) el.parentNode.insertBefore(el, el.nextElementSibling.nextElementSibling);
       dzMarkDirty(); dzBuildLayers(); dzPositionHandle(); };
     const dn = document.createElement("span");
     dn.className = "dz-ord"; dn.textContent = "▼"; dn.title = "Enviar atrás";
-    dn.onclick = (e) => { e.stopPropagation();
+    dn.onclick = (e) => { e.stopPropagation(); dzSnapshot();
       if (el.previousElementSibling) el.parentNode.insertBefore(el, el.previousElementSibling);
       dzMarkDirty(); dzBuildLayers(); dzPositionHandle(); };
     row.appendChild(eye); row.appendChild(lbl); row.appendChild(up); row.appendChild(dn);
@@ -2026,6 +2100,7 @@ function dzAlign(mode) {
   const el = DZ.sel;
   const svg = $("#dzCanvas").querySelector("svg");
   if (!el || !svg) return;
+  dzSnapshot();
   const vb = (svg.getAttribute("viewBox") || "0 0 1080 1080").split(/\s+/).map(Number);
   const b = el.getBoundingClientRect();
   const p1 = dzToUser(b.left, b.top), p2 = dzToUser(b.right, b.bottom);
@@ -2085,21 +2160,51 @@ function dzToggleCode() {
     panel.hidden = true;
   }
 }
-function dzApplyCode() {
-  const txt = $("#dzCodeArea").value.trim();
-  if (!txt) return;
+/* reemplaza el svg del lienzo por otro (texto), conservando tirador/pin */
+function dzApplySvgText(txt) {
   const cv = $("#dzCanvas");
   const handle = $("#dzHandle");
-  // reemplazar el svg conservando el tirador
   const old = cv.querySelector("svg");
   const tmp = document.createElement("div"); tmp.innerHTML = txt;
   const nsvg = tmp.querySelector("svg");
-  if (!nsvg) return sysMsg("❌ El código no tiene un <svg> válido.");
+  if (!nsvg) { sysMsg("❌ El código no tiene un <svg> válido."); return false; }
   if (old) old.remove();
   cv.insertBefore(nsvg, handle);
   if (!nsvg.getAttribute("width")) nsvg.style.width = "min(80vw, 900px)";
   DZ.sel = null; $("#dzProps").hidden = true; $("#dzEmpty").hidden = false; handle.hidden = true;
   dzApplyZoom(); dzMarkDirty(); dzBuildLayers();
+  if (DZ.anim) dzOnionUpdate();
+  return true;
+}
+function dzApplyCode() {
+  const txt = $("#dzCodeArea").value.trim();
+  if (!txt) return;
+  dzSnapshot();
+  dzApplySvgText(txt);
+}
+
+/* ── deshacer/rehacer (Ctrl+Z / Ctrl+Y): fotos del SVG antes de cada cambio ── */
+function dzSnapshot() {
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (!svg) return;
+  DZ.undo = DZ.undo || [];
+  DZ.undo.push(dzSerialize(svg));
+  if (DZ.undo.length > 50) DZ.undo.shift();
+  DZ.redo = [];               // un cambio nuevo invalida los "rehacer"
+}
+function dzUndo() {
+  if (!DZ.undo || !DZ.undo.length) { setStatus("(nada para deshacer)"); return; }
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (svg) { DZ.redo = DZ.redo || []; DZ.redo.push(dzSerialize(svg)); }
+  dzApplySvgText(DZ.undo.pop());
+  setStatus("↩ deshecho");
+}
+function dzRedo() {
+  if (!DZ.redo || !DZ.redo.length) return;
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (svg) { DZ.undo = DZ.undo || []; DZ.undo.push(dzSerialize(svg)); }
+  dzApplySvgText(DZ.redo.pop());
+  setStatus("↪ rehecho");
 }
 /* serializa el svg sin las marcas de la UI (clase de selección) */
 function dzSerialize(svg) {

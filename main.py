@@ -41,7 +41,7 @@ ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.12.0"
+FIDEL_VERSION = "2.13.0"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -616,6 +616,22 @@ class Api:
         except OSError as e:
             return {"error": str(e)}
         return {"path": str(out)}
+
+    def del_frame(s, path):
+        """Borra un cuadro y devuelve el vecino más cercano para seguir editando."""
+        p = Path(path)
+        if not s._FRAME_RX.match(p.name):
+            return {"error": "no es un cuadro (_fNNN.svg)"}
+        frames = s.list_frames(path)["frames"]
+        if len(frames) <= 1:
+            return {"error": "es el único cuadro — borralo desde el árbol si querés"}
+        i = frames.index(str(p)) if str(p) in frames else 0
+        try:
+            p.unlink()
+        except OSError as e:
+            return {"error": str(e)}
+        rest = [f for f in frames if f != str(p)]
+        return {"path": rest[min(i, len(rest) - 1)]}
 
     def new_design(s):
         """Crea un lienzo SVG inicial (con elementos editables) y devuelve su ruta,
@@ -1375,15 +1391,31 @@ class Api:
     VIDEO_T2V = "Wan-AI/Wan2.2-T2V-A14B"
     VIDEO_I2V = "Wan-AI/Wan2.2-I2V-A14B"
 
+    @staticmethod
+    def _sf_video_models(key, i2v=False):
+        """Modelos de video disponibles HOY en el catálogo (cambia seguido).
+        i2v=True busca imagen→video; si no, texto→video."""
+        try:
+            r = requests.get("https://api.siliconflow.com/v1/models",
+                             headers={"Authorization": f"Bearer {key}"}, timeout=10)
+            ids = [m["id"] for m in r.json().get("data", [])]
+        except (requests.RequestException, ValueError, KeyError):
+            return []
+        tag = "i2v" if i2v else "t2v"
+        out = [i for i in ids if tag in i.lower()]
+        if not out:   # más laxo: cualquier modelo que diga video
+            out = [i for i in ids if "video" in i.lower() and "instruct" not in i.lower()]
+        return out[:3]
+
     def _sf_video(s, prompt, image_path=None, size="1280x720"):
         """Genera un video (async: submit + poll). Con image_path ANIMA esa
-        imagen manteniendo su estilo (I2V). Devuelve (bytes_mp4, error)."""
+        imagen manteniendo su estilo (I2V). Si el modelo conocido ya no existe,
+        busca en el catálogo vivo el que lo sepa hacer. Devuelve (bytes, error)."""
         sk = s.cfg.get_api_key("siliconflow")
         if not sk:
             return None, "video necesita la API key de SiliconFlow (⚙)"
         hdr = {"Authorization": f"Bearer {sk}", "Content-Type": "application/json"}
-        body = {"model": s.VIDEO_I2V if image_path else s.VIDEO_T2V,
-                "prompt": prompt, "image_size": size}   # image_size es OBLIGATORIO
+        body = {"prompt": prompt, "image_size": size}   # image_size es OBLIGATORIO
         if image_path:
             p = Path(image_path)
             mime = s.IMG_MIME.get(p.suffix.lower())
@@ -1394,14 +1426,26 @@ class Api:
                     base64.b64encode(p.read_bytes()).decode("ascii")
             except OSError as e:
                 return None, str(e)
-        try:
-            r = requests.post("https://api.siliconflow.com/v1/video/submit",
-                              headers=hdr, json=body, timeout=60)
-            rid = r.json().get("requestId")
-        except (requests.RequestException, ValueError) as e:
-            return None, f"submit falló: {e}"
+        # candidatos: el conocido primero; si su submit falla, el catálogo en vivo
+        known = s.VIDEO_I2V if image_path else s.VIDEO_T2V
+        rid, sub_err = None, None
+        for model in [known] + [m for m in s._sf_video_models(sk, i2v=bool(image_path))
+                                if m != known]:
+            try:
+                r = requests.post("https://api.siliconflow.com/v1/video/submit",
+                                  headers=hdr, json={**body, "model": model}, timeout=60)
+                rid = r.json().get("requestId")
+            except (requests.RequestException, ValueError) as e:
+                sub_err = f"submit falló ({model}): {e}"
+                continue
+            if rid:
+                if model != known:
+                    s._push("sys", f"🎬 Usé {model} (el modelo conocido no estaba disponible)")
+                break
+            sub_err = f"{model}: {r.text[:150]}"
+            log(f"video submit rechazado {model}: {r.text[:150]}")
         if not rid:
-            return None, f"submit sin requestId: {r.text[:200]}"
+            return None, sub_err or "ningún modelo de video disponible en el catálogo"
         s._push("sys", "🎬 Generando video (~2-4 min)… te aviso cuando esté.")
         for i in range(60):                     # hasta 10 minutos
             time.sleep(10)
