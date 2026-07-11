@@ -41,7 +41,7 @@ ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.18.0"
+FIDEL_VERSION = "3.0.0"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -50,10 +50,13 @@ DEFAULT_EXPECTED = "2, 3, 5, 7, 11, 13, 17, 19, 23, 29"
 
 # System prompt por defecto del agente. Editable desde ⚙ — Fidel no agrega
 # ningún filtro ni instrucción oculta más allá de esto.
-DEFAULT_SP = ("Eres Fidel, programador senior. Tienes HERRAMIENTAS: read_file, "
+DEFAULT_SP = ("Eres LOW, agente creativo y programador senior orientado a diseño, video y animacion. Tienes HERRAMIENTAS: read_file, "
               "write_file, edit_file, exec_cmd, run_code, list_files, search_code, "
               "git, ssh_exec, scp_upload, generate_image, remember, check_design, social_export, "
-              "web_search, web_fetch, write_doc, edit_image, animate_image, generate_video. "
+              "web_search, web_fetch, write_doc, edit_image, refine_image, animate_image, generate_video. "
+              "PRECISION de imagen: usa seed en generate_image para iterar cambiando UNA "
+              "cosa a la vez (mismo seed = misma base); refina el resultado final con "
+              "refine_image (detalle y nitidez estilo Magnific) antes de entregarlo. "
               "Usalas y ACTUA directo, sin pedir permiso. "
               "ANIMACION/storyboard/animatic: 1) crea el cuadro clave (generate_image o "
               "un SVG); 2) para el resto de los planos MANTENE EL ESTILO usando edit_image "
@@ -1325,7 +1328,8 @@ class Api:
             {"type": "function", "function": {"name": "git", "description": "Ejecuta un comando git EN EL WORKSPACE (status, add, commit, push, pull, log, diff, branch, clone, remote, init...). Para SUBIR A GITHUB: 'add -A' -> 'commit -m \"mensaje\"' -> 'push'. Si el repo no existe aun podes usar exec_cmd con 'gh repo create' (gh CLI ya esta autenticado). No hace falta pedir permiso.", "parameters": {"type": "object", "properties": {"args": {"type": "string", "description": "argumentos de git, ej: commit -m \"fix login\""}}, "required": ["args"]}}},
             {"type": "function", "function": {"name": "ssh_exec", "description": "Ejecuta un comando en un servidor remoto por SSH y devuelve stdout/stderr. 'host' puede ser un ALIAS guardado (ver lista de servidores) o 'usuario@ip' directo. Usalo para administrar servidores, desplegar, revisar logs, etc.", "parameters": {"type": "object", "properties": {"host": {"type": "string", "description": "alias guardado o usuario@ip"}, "command": {"type": "string"}}, "required": ["host", "command"]}}},
             {"type": "function", "function": {"name": "scp_upload", "description": "Sube un archivo o carpeta local a un servidor remoto por scp. 'host' = alias guardado o usuario@ip.", "parameters": {"type": "object", "properties": {"host": {"type": "string"}, "local": {"type": "string", "description": "ruta local (relativa al workspace o absoluta)"}, "remote": {"type": "string", "description": "ruta destino en el servidor"}}, "required": ["host", "local", "remote"]}}},
-            {"type": "function", "function": {"name": "generate_image", "description": "Genera una imagen a partir de una descripcion (DALL-E de OpenAI, o SiliconFlow si no hay key de OpenAI) y la guarda en el workspace. Requiere API key de OpenAI o SiliconFlow cargada en Configuracion.", "parameters": {"type": "object", "properties": {"prompt": {"type": "string", "description": "descripcion de la imagen a generar, en ingles da mejor resultado"}, "path": {"type": "string", "description": "ruta donde guardarla dentro del workspace, ej assets/logo.png. Si se omite usa assets/img_<fecha>.png"}, "size": {"type": "string", "description": "tamano, ej 1024x1024 (default) — no todos los tamanos existen en todos los proveedores"}}, "required": ["prompt"]}}},
+            {"type": "function", "function": {"name": "generate_image", "description": "Genera una imagen a partir de una descripcion (DALL-E de OpenAI, o SiliconFlow si no hay key de OpenAI) y la guarda en el workspace. Requiere API key de OpenAI o SiliconFlow cargada en Configuracion.", "parameters": {"type": "object", "properties": {"prompt": {"type": "string", "description": "descripcion de la imagen a generar, en ingles da mejor resultado"}, "path": {"type": "string", "description": "ruta donde guardarla dentro del workspace, ej assets/logo.png. Si se omite usa assets/img_<fecha>.png"}, "size": {"type": "string", "description": "tamano, ej 1024x1024 (default) — no todos los tamanos existen en todos los proveedores"}, "seed": {"type": "integer", "description": "semilla: mismo seed + mismo prompt = misma imagen. Usalo para iterar con precision (cambiar UNA cosa manteniendo el resto)"}}, "required": ["prompt"]}}},
+            {"type": "function", "function": {"name": "refine_image", "description": "REFINA una imagen existente al estilo Magnific: aumenta micro-detalle, nitidez y fidelidad de texturas SIN cambiar composición ni estilo. Opcionalmente un foco ('la cara', 'el fondo'). Guarda una versión _hd al lado. Ideal como paso final antes de publicar.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "ruta a la imagen"}, "focus": {"type": "string", "description": "en qué enfocar el refinado (opcional)"}}, "required": ["path"]}}},
             {"type": "function", "function": {"name": "remember", "description": "Guarda un HECHO DURABLE de ESTE proyecto en la memoria del workspace (.fidel/memoria.md) para tenerlo en futuras sesiones: stack y versiones, comandos de build/test/deploy, servidores y rutas, convenciones de código, decisiones tomadas. Usalo cuando descubras algo del proyecto que valga la pena recordar. NO lo uses para cosas triviales o de un solo uso.", "parameters": {"type": "object", "properties": {"note": {"type": "string", "description": "el hecho a recordar, en una frase concreta"}}, "required": ["note"]}}},
             {"type": "function", "function": {"name": "save_character", "description": "Guarda la FICHA DE PERSONAJE (hoja de modelo) del proyecto. La ficha se inyecta AUTOMATICAMENTE en todos los prompts de generate_image/edit_image/animate_image/generate_video que mencionen al personaje — es el ancla para que NO cambie de aspecto entre imagenes y videos. Usala apenas se defina un personaje (o cuando el usuario apruebe un diseno) y actualizala si el diseno evoluciona. La descripcion en INGLES da mejor resultado con los modelos generativos.", "parameters": {"type": "object", "properties": {"name": {"type": "string", "description": "nombre corto del personaje, ej 'Rita'"}, "description": {"type": "string", "description": "hoja de modelo COMPLETA y concreta en ingles: especie/edad, forma de cara y cuerpo, proporciones (ej 'large round head, small body, 3-heads tall'), pelo, ojos, piel/pelaje con COLORES EXACTOS (hex si aplica), ropa detallada, accesorios, estilo de dibujo (ej 'flat vector, thick outlines'). Todo lo que no quieras que cambie."}}, "required": ["name", "description"]}}},
             {"type": "function", "function": {"name": "check_design", "description": "VE un archivo .svg: lo rasteriza y lo revisa con un modelo de visión, devolviendo qué está visualmente mal o mejorable (proporciones, alineación, elementos fuera del lienzo, texto desbordado, colores). Usalo DESPUÉS de escribir un SVG para no dibujar a ciegas — corregí según la devolución y volvé a chequear.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "ruta al .svg a revisar"}}, "required": ["path"]}}},
@@ -1605,7 +1609,8 @@ class Api:
                 size = args.get("size") or "1024x1024"
                 rel = args.get("path") or (
                     f"assets/img_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.png")
-                img_bytes, used, err = s._gen_image(s._enhance_gen_prompt(prompt, "imagen"), size)
+                img_bytes, used, err = s._gen_image(s._enhance_gen_prompt(prompt, "imagen"), size,
+                                                    seed=args.get("seed"))
                 if err:
                     return f"❌ {err}"
                 p = s._base() / rel
@@ -1614,6 +1619,31 @@ class Api:
                 s._written.append(str(p))
                 s._push("wrote", {"path": str(p)})
                 return f"✅ Imagen generada con {used} → {rel}"
+            if name == "refine_image":
+                rel = s._arg_path(args)
+                if not rel:
+                    return "❌ Falta 'path' a la imagen"
+                p = Path(rel) if os.path.isabs(rel) else s._base() / rel
+                if not p.exists():
+                    return f"❌ No existe: {rel}"
+                focus = (args.get("focus") or "").strip()
+                # prompt de refinado fijo en inglés (no pasa por el traductor: es técnica)
+                rp = ("Enhance this image like a professional upscaler: dramatically increase "
+                      "micro-detail, texture fidelity and sharpness; refine edges and remove "
+                      "artifacts. Keep the composition, colors, style and every element EXACTLY "
+                      "the same — only add detail and clarity."
+                      + (f" Pay special attention to: {focus}." if focus else ""))
+                data, err = s._edit_image_api(str(p), rp)
+                if err:
+                    return f"❌ {err}"
+                out = p.with_name(f"{p.stem}_hd.png")
+                n = 2
+                while out.exists():
+                    out = p.with_name(f"{p.stem}_hd{n}.png"); n += 1
+                out.write_bytes(data)
+                s._written.append(str(out))
+                s._push("wrote", {"path": str(out)})
+                return f"✅ Imagen refinada (detalle+nitidez) → {out.name}"
             if name == "edit_image":
                 rel = s._arg_path(args)
                 if not rel:
@@ -2014,7 +2044,7 @@ class Api:
         s._push("wrote", {"path": str(out)})
         return {"path": str(out), "name": out.name}
 
-    def _gen_image(s, prompt, size="1024x1024"):
+    def _gen_image(s, prompt, size="1024x1024", seed=None):
         """Genera una imagen con la primera API disponible: OpenAI (dall-e-3)
         y si no hay key, SiliconFlow (con fallback dinámico al catálogo en vivo).
         Devuelve (bytes, proveedor_usado, error) — uno de (bytes, error) es no-None."""
@@ -2048,7 +2078,8 @@ class Api:
                     r = requests.post(
                         "https://api.siliconflow.com/v1/images/generations",
                         headers={"Authorization": f"Bearer {sk}", "Content-Type": "application/json"},
-                        json={"model": model, "prompt": prompt, "image_size": size},
+                        json={"model": model, "prompt": prompt, "image_size": size,
+                              **({"seed": int(seed)} if seed is not None else {})},
                         timeout=90)
                     if r.ok:
                         d = (r.json().get("data") or [{}])[0]
@@ -3286,7 +3317,7 @@ class Api:
                 role = m.get("role")
                 if role == "user":
                     s._mem.append({"role": "user", "content": m.get("content", "")})
-                elif role in ("assistant", "Fidel"):
+                elif role in ("assistant", "Fidel", "LOW"):
                     s._mem.append({"role": "assistant", "content": m.get("content", "")})
             # Mantener solo los últimos turnos para no saturar el contexto
             s._mem = s._mem[-s._mem_limit():]
@@ -3432,7 +3463,7 @@ def main():
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     ui = os.path.join(base, "ui", "index.html")
     window = webview.create_window(
-        "Fidel", ui, js_api=api,
+        "LOW", ui, js_api=api,
         width=1280, height=800, min_size=(980, 600), maximized=True,
         background_color="#0B0B0C",
     )

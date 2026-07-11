@@ -244,7 +244,7 @@ async function init() {
   bind();
   restorePanelSizes();
   initSplitters();
-  sysMsg("Fidel v" + (S.version || "?") + " — listo.\n" +
+  sysMsg("LOW v" + (S.version || "?") + " — listo.\n" +
          "⚙ API keys · 📁 proyecto · 🔎 junto al modelo: buscador entre todos los modelos de la API.\n" +
          "barra izquierda: ✒ Diseño (editor de vectores SVG), 🧊 Artefactos (vista previa en vivo), " +
          "⟳ Rutinas, 🔧 Herramientas, 🖧 Servidores SSH, ⟲ Historial, ▦ Ranking.\n" +
@@ -742,7 +742,7 @@ function switchTab(id) {
   cm.swapDoc(t.doc);
   S.loading = false;
   applyEditorMode();   // respeta el idioma forzado; en "auto" detecta por extensión
-  document.title = "Fidel — " + t.name;
+  document.title = "LOW — " + t.name;
   renderTabs(); renderTree(); updateLnCol();
   cm.focus();
 }
@@ -919,7 +919,7 @@ async function save() {
   t.path = r.path; t.name = r.name; t.id = t.id.startsWith("*") ? r.path : t.id;
   if (S.cur.startsWith("*")) S.cur = t.id;
   t.modified = false;
-  document.title = "Fidel — " + t.name;
+  document.title = "LOW — " + t.name;
   renderTabs(); renderTree();
   setStatus("💾 " + r.name);
 }
@@ -1074,7 +1074,7 @@ function agentMsg(text) {
   h.innerHTML = '<div class="m-ava">★</div>';
   const who = document.createElement("span");
   who.className = "m-who";
-  who.textContent = "Fidel · " + $("#selModel").value;
+  who.textContent = "LOW · " + $("#selModel").value;
   h.appendChild(who);
   const b = document.createElement("div");
   b.className = "m-txt"; b.textContent = text;
@@ -1175,8 +1175,8 @@ async function send() {
     stopThinking();
     planDone();
     // si vino por streaming, la burbuja ya se armó con los eventos agent_*
-    if (r && r.streamed) { persist("Fidel", r.full || "", sid); }
-    else if (r && r.text) { agentMsg(r.text); persist("Fidel", r.text, sid); }
+    if (r && r.streamed) { persist("LOW", r.full || "", sid); }
+    else if (r && r.text) { agentMsg(r.text); persist("LOW", r.text, sid); }
     if (r && r.status) setStatus(r.status);
   } catch (e) {
     stopThinking();
@@ -1241,7 +1241,7 @@ async function resume(sid) {
   $("#msgs").innerHTML = "";
   for (const m of msgs) {
     if (m.role === "user") userMsg(m.content);
-    else if (m.role === "Fidel") agentMsg(m.content);
+    else if ((m.role === "Fidel" || m.role === "LOW")) agentMsg(m.content);
     else sysMsg(m.content);
   }
   sysMsg(`📂 Restaurada (${msgs.length} msgs)`);
@@ -1848,7 +1848,7 @@ function dzDeselect() {
   const rot = $("#dzRotate"); if (rot) rot.hidden = true;
   const pv = $("#dzPivot"); if (pv) pv.hidden = true;
   dzBuildLayers();
-  $("#dzPrompt").placeholder = "Pedile un cambio a Fidel… ej: «hacé el título más grande y centralo»";
+  $("#dzPrompt").placeholder = "Pedile un cambio a LOW… ej: «hacé el título más grande y centralo»";
 }
 /* ubica el tirador de resize (esquina inferior-derecha) y el pin de comentario
    (esquina superior-izquierda) sobre el elemento seleccionado */
@@ -4216,6 +4216,67 @@ function dzAlign(mode) {
   dzPositionHandle(); dzMarkDirty(); dzBuildInspector(el);
 }
 
+/* ── alineación ENTRE objetos + distribuir (multi-selección, estilo Illustrator) ── */
+function dzSelBounds(els) {
+  return els.map(el => {
+    const b = el.getBoundingClientRect();
+    const p1 = dzToUser(b.left, b.top), p2 = dzToUser(b.right, b.bottom);
+    return { el, x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y,
+             cx: (p1.x + p2.x) / 2, cy: (p1.y + p2.y) / 2, w: p2.x - p1.x, h: p2.y - p1.y };
+  });
+}
+function dzAlignSel(mode) {
+  const els = (DZ.multi || []).length > 1 ? DZ.multi : null;
+  if (!els) return;
+  dzSnapshot();
+  const bs = dzSelBounds(els);
+  const L = Math.min(...bs.map(b => b.x1)), R = Math.max(...bs.map(b => b.x2));
+  const T = Math.min(...bs.map(b => b.y1)), B = Math.max(...bs.map(b => b.y2));
+  for (const b of bs) {
+    let dx = 0, dy = 0;
+    if (mode === "l") dx = L - b.x1;
+    if (mode === "ch") dx = (L + R) / 2 - b.cx;
+    if (mode === "r") dx = R - b.x2;
+    if (mode === "t") dy = T - b.y1;
+    if (mode === "cv") dy = (T + B) / 2 - b.cy;
+    if (mode === "b") dy = B - b.y2;
+    if (dx || dy) dzWritePos(b.el, dzReadPos(b.el), dx, dy);
+  }
+  dzPositionHandle(); dzMarkDirty();
+  dzSetStatus("⧉ " + els.length + " alineados");
+}
+function dzDistribute(axis) {
+  const els = (DZ.multi || []).length > 2 ? DZ.multi : null;
+  if (!els) { dzSetStatus("distribuir necesita 3+ elementos (Shift+clic)"); return; }
+  dzSnapshot();
+  const bs = dzSelBounds(els).sort((a, b) => axis === "h" ? a.cx - b.cx : a.cy - b.cy);
+  const first = bs[0], last = bs[bs.length - 1];
+  const span = axis === "h" ? last.cx - first.cx : last.cy - first.cy;
+  const step = span / (bs.length - 1);
+  bs.forEach((b, i) => {
+    if (i === 0 || i === bs.length - 1) return;
+    const target = (axis === "h" ? first.cx : first.cy) + step * i;
+    const d = target - (axis === "h" ? b.cx : b.cy);
+    dzWritePos(b.el, dzReadPos(b.el), axis === "h" ? d : 0, axis === "h" ? 0 : d);
+  });
+  dzMarkDirty(); dzSetStatus("⧉ distribuidos con espaciado parejo");
+}
+/* voltear horizontal/vertical (uno o varios), anclado al centro local */
+function dzFlip(axis) {
+  const els = (DZ.multi || []).length > 1 ? DZ.multi : (DZ.sel ? [DZ.sel] : []);
+  if (!els.length) return;
+  dzSnapshot();
+  for (const el of els) {
+    let lb = null; try { lb = el.getBBox(); } catch (e) { continue; }
+    const cx = lb.x + lb.width / 2, cy = lb.y + lb.height / 2;
+    const sx = axis === "h" ? -1 : 1, sy = axis === "h" ? 1 : -1;
+    const chunk = ` translate(${(cx * (1 - sx)).toFixed(2)} ${(cy * (1 - sy)).toFixed(2)}) scale(${sx} ${sy})`;
+    const tr = el.getAttribute("transform") || "";
+    el.setAttribute("transform", (tr ? tr + " " : "") + chunk.trim());
+  }
+  dzPositionHandle(); dzMarkDirty();
+}
+
 /* ── 🧬 Variaciones: el agente evoluciona el diseño y elegís con un clic.
    Cría selectiva de diseños — elegí una y volvé a evolucionar desde ella. ── */
 async function dzVariations() {
@@ -4397,6 +4458,23 @@ function dzBuildInspector(el) {
     `<span class="dz-al" data-al="cv" title="Centro vertical">↕</span>` +
     `<span class="dz-al" data-al="b" title="Abajo">⤓</span>` +
     `</div></div>`;
+  html += `<div class="dz-field"><label>Voltear</label><div class="dz-alignrow">` +
+    `<span class="dz-al" data-flip="h" title="Voltear horizontal">⇋</span>` +
+    `<span class="dz-al" data-flip="v" title="Voltear vertical">⇵</span>` +
+    `</div></div>`;
+  if ((DZ.multi || []).length > 1) {
+    html += `<div class="dz-field"><label>⧉ Entre los ${DZ.multi.length} seleccionados</label><div class="dz-alignrow">` +
+      `<span class="dz-al" data-alsel="l" title="Izquierdas juntas">⇤</span>` +
+      `<span class="dz-al" data-alsel="ch" title="Centros verticales">↔</span>` +
+      `<span class="dz-al" data-alsel="r" title="Derechas juntas">⇥</span>` +
+      `<span class="dz-al" data-alsel="t" title="Arribas juntas">⤒</span>` +
+      `<span class="dz-al" data-alsel="cv" title="Centros horizontales">↕</span>` +
+      `<span class="dz-al" data-alsel="b" title="Abajos juntas">⤓</span>` +
+      `</div><div class="dz-alignrow" style="margin-top:4px">` +
+      `<span class="dz-al" data-dist="h" title="Distribuir horizontal (3+)">⇹</span>` +
+      `<span class="dz-al" data-dist="v" title="Distribuir vertical (3+)">⇳</span>` +
+      `</div></div>`;
+  }
   // color de relleno y trazo (picker + texto para aceptar none/hex/nombre)
   html += `<div class="dz-field"><label>Relleno (fill)</label><div class="dz-row">` +
     `<input id="dzFillC" type="color" value="${dzHex(dzGet(el, "fill", "fill"))}" style="width:44px">` +
@@ -4424,6 +4502,13 @@ function dzBuildInspector(el) {
       ["normal", "bold", "300", "400", "500", "600", "700", "800", "900"].map(w =>
         `<option ${String(dzGet(el, "font-weight", "fontWeight")) === w ? "selected" : ""}>${w}</option>`).join("") +
       `</select></div></div>`;
+    const anc = dzGet(el, "text-anchor", "") || "start";
+    html += `<div class="dz-field"><label>Alineación del texto</label><div class="dz-alignrow">` +
+      `<span class="dz-al${anc === "start" ? " on" : ""}" data-anchor="start" title="Izquierda">⤆</span>` +
+      `<span class="dz-al${anc === "middle" ? " on" : ""}" data-anchor="middle" title="Centrado">☰</span>` +
+      `<span class="dz-al${anc === "end" ? " on" : ""}" data-anchor="end" title="Derecha">⤇</span>` +
+      `<span class="dz-al${dzGet(el, "font-style", "") === "italic" ? " on" : ""}" data-italic="1" title="Cursiva"><i>I</i></span>` +
+      `</div></div>`;
     html += `<div class="dz-field"><label>Pares sugeridos</label><div class="dz-suggest">` +
       DZ_PAIRS.map((p, i) => `<span class="dz-chip" data-pair="${i}">${p[0]} / ${p[1]}</span>`).join("") +
       `</div><div class="dz-hint">Aplica la tipografía de título al elemento.</div></div>`;
@@ -4471,8 +4556,16 @@ function dzWire(el, isText) {
   on("dzY1", e => dzSet(el, "y1", e.target.value));
   on("dzX2", e => dzSet(el, "x2", e.target.value));
   on("dzY2", e => dzSet(el, "y2", e.target.value));
-  document.querySelectorAll("#dzProps .dz-al").forEach(b =>
-    b.onclick = () => dzAlign(b.dataset.al));
+  document.querySelectorAll("#dzProps .dz-al").forEach(b => b.onclick = () => {
+    if (b.dataset.al) dzAlign(b.dataset.al);
+    else if (b.dataset.flip) dzFlip(b.dataset.flip);
+    else if (b.dataset.alsel) dzAlignSel(b.dataset.alsel);
+    else if (b.dataset.dist) dzDistribute(b.dataset.dist);
+    else if (b.dataset.anchor) { dzSnapshot(); dzSet(el, "text-anchor", b.dataset.anchor); dzBuildInspector(el); dzMarkDirty(); }
+    else if (b.dataset.italic) { dzSnapshot();
+      dzSet(el, "font-style", dzGet(el, "font-style", "") === "italic" ? "" : "italic");
+      dzBuildInspector(el); dzMarkDirty(); }
+  });
   if (isText) {
     on("dzText", e => { el.textContent = e.target.value; });
     on("dzFont", e => dzSet(el, "font-family", e.target.value));

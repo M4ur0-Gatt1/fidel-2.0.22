@@ -1,22 +1,22 @@
 ; Instalador de Fidel â€” editor de cÃ³digo con agente IA
 ; Compilar: ISCC.exe fidel_installer.iss
 
-#define AppName "Fidel"
-#define AppVersion "2.18.0"
-#define AppExe "Fidel.exe"
+#define AppName "LOW"
+#define AppVersion "3.0.0"
+#define AppExe "LOW.exe"
 
 [Setup]
 AppId={{B7E3D9A4-2C51-4F8E-A6B0-3D94E71C5F28}
 AppName={#AppName}
 AppVersion={#AppVersion}
-AppPublisher=Mauro Gatti
+AppPublisher=Mauro Gatti · Tropa Circa
 DefaultDirName={localappdata}\Programs\{#AppName}
 DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
 ; instalaciÃ³n por usuario: no pide permisos de administrador
 PrivilegesRequired=lowest
 OutputDir=Output
-OutputBaseFilename=FidelSetup-{#AppVersion}
+OutputBaseFilename=LOWSetup-{#AppVersion}
 SetupIconFile=fidel.ico
 UninstallDisplayIcon={app}\{#AppExe}
 Compression=lzma2
