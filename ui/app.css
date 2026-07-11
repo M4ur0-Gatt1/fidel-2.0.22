@@ -578,6 +578,25 @@ footer {
   filter: drop-shadow(0 1px 3px rgba(0,0,0,.6));
 }
 .dz-pin[hidden] { display: none; }
+/* manija de rotación (arriba-centro de la selección) */
+.dz-rotate {
+  position: absolute; z-index: 5; transform: translate(-50%, -50%);
+  width: 18px; height: 18px; line-height: 17px; text-align: center;
+  background: var(--panel2); color: var(--txt); border: 1.5px solid var(--red);
+  border-radius: 50%; cursor: grab; font-size: 12px; user-select: none;
+  box-shadow: 0 1px 4px rgba(0,0,0,.5);
+}
+.dz-rotate[hidden] { display: none; }
+/* nodos editables (herramienta ⬦): un tirador por punto del trazado */
+.dz-node {
+  position: absolute; width: 9px; height: 9px; z-index: 6;
+  background: #fff; border: 1.5px solid #2a7fff; border-radius: 2px;
+  transform: translate(-50%, -50%) rotate(45deg); cursor: move;
+  box-shadow: 0 1px 3px rgba(0,0,0,.5);
+}
+.dz-node:hover { background: #2a7fff; }
+/* selección múltiple (Shift+clic) */
+.dz-msel { outline: 1.5px dashed #2a7fff; outline-offset: 2px; }
 /* panel de código SVG (open code design) */
 .dz-code { width: 42%; flex: none; display: flex; flex-direction: column; border-left: 1px solid var(--line); background: var(--bg); }
 .dz-code[hidden] { display: none; }
@@ -666,15 +685,46 @@ footer {
   border-top: 1px solid var(--line); background: var(--panel); padding: 7px 12px;
 }
 .dz-timeline[hidden] { display: none; }
+/* panel de estilo (relleno/trazo/opacidad) + paleta del proyecto */
+.dz-style { border-bottom: 1px solid var(--line); padding-bottom: 10px; margin-bottom: 10px; }
+.dz-style-row { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+.dz-swatch-l { display: flex; align-items: center; gap: 5px; font: 500 11px Figtree, sans-serif; color: var(--mut); cursor: pointer; }
+.dz-swatch-l input[type=color] { width: 26px; height: 22px; padding: 1px; border: 1px solid var(--line); border-radius: 6px; background: var(--panel2); cursor: pointer; }
+.dz-none {
+  width: 22px; height: 22px; line-height: 20px; padding: 0; text-align: center;
+  background: var(--panel2); color: var(--mut); border: 1px solid var(--line);
+  border-radius: 6px; cursor: pointer; font-size: 12px;
+}
+.dz-none:hover { color: var(--red); border-color: var(--red); }
+.dz-style-row input[type=range] { flex: 1; accent-color: var(--red); }
+.dz-palette { display: flex; flex-wrap: wrap; gap: 5px; }
+.dz-sw {
+  width: 20px; height: 20px; border-radius: 5px; border: 1px solid var(--line);
+  cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+}
+.dz-sw:hover { transform: scale(1.15); }
+.dz-sw-add {
+  background: var(--panel2); color: var(--mut); text-align: center;
+  line-height: 18px; font-size: 14px; font-weight: 600;
+}
 .tl-frames { display: flex; gap: 5px; overflow-x: auto; flex: 1; min-width: 0; }
 .tl-frame {
-  flex: none; min-width: 34px; height: 30px; display: flex; align-items: center;
+  flex: none; width: 52px; height: 44px; display: flex; align-items: center;
   justify-content: center; border: 1px solid var(--line); border-radius: 7px;
   font: 600 11.5px 'JetBrains Mono', monospace; color: var(--mut); cursor: pointer;
-  background: var(--panel2);
+  background: var(--panel2); position: relative; overflow: hidden;
 }
 .tl-frame:hover { color: var(--txt); border-color: var(--mut); }
-.tl-frame.cur { color: #fff; background: var(--red); border-color: var(--red); }
+.tl-frame.cur { color: #fff; border-color: var(--red); box-shadow: 0 0 0 1.5px var(--red); }
+/* miniatura del cuadro (X-sheet): el svg escala al chip; el número flota */
+.tl-thumb { position: absolute; inset: 0; background: #fff; }
+.tl-thumb svg { width: 100%; height: 100%; display: block; }
+.tl-n {
+  position: absolute; left: 2px; bottom: 2px; z-index: 2;
+  padding: 0 4px; border-radius: 4px;
+  background: rgba(0,0,0,.55); color: #fff; line-height: 15px;
+}
+.tl-frame.cur .tl-n { background: var(--red); }
 /* dock de chat del diseño: pedirle correcciones al agente sin salir del editor */
 .dz-dock { flex: none; border-top: 1px solid var(--line); background: var(--panel); padding: 10px 14px; }
 .dz-dock-status { font-size: 11.5px; color: var(--mut); margin-bottom: 7px; white-space: pre-wrap; }

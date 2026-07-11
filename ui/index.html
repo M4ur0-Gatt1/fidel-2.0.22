@@ -182,17 +182,25 @@
   <div class="art-bar">
     <span class="art-title" id="dzTitle">Diseño</span>
     <div class="vsep"></div>
-    <button class="ibtn dz-toolbtn active" data-tool="select" title="Seleccionar / mover">➤</button>
-    <button class="ibtn dz-toolbtn" data-tool="pencil" title="Lápiz: trazo a mano alzada suavizado">✏</button>
-    <button class="ibtn dz-toolbtn" data-tool="brush" title="Pincel: grosor según presión de la tableta">🖌</button>
-    <button class="ibtn dz-toolbtn" data-tool="pen" title="Pluma vectorial: clic = punto, clic y arrastrar = curva · Enter termina, Esc cancela">✒</button>
-    <input type="color" id="dzDrawColor" value="#E5322D" title="Color de trazo" class="dz-colorin">
-    <input type="number" id="dzDrawW" value="6" min="1" max="80" title="Grosor de trazo" class="dz-win">
+    <button class="ibtn dz-toolbtn active" data-tool="select" title="Seleccionar / mover (V) · Shift+clic: sumar a la selección">➤</button>
+    <button class="ibtn dz-toolbtn" data-tool="nodes" title="Nodos (A): editar los puntos de un trazado — arrastralos; doble clic en un punto lo borra">⬦</button>
+    <button class="ibtn dz-toolbtn" data-tool="pencil" title="Lápiz (N): trazo a mano alzada suavizado">✏</button>
+    <button class="ibtn dz-toolbtn" data-tool="brush" title="Pincel (B): grosor según presión de la tableta">🖌</button>
+    <button class="ibtn dz-toolbtn" data-tool="pen" title="Pluma vectorial (P): clic = punto, clic y arrastrar = curva · Enter termina, Esc cancela">✒</button>
+    <button class="ibtn dz-toolbtn" data-tool="eraser" title="Borrador (E): pasalo por encima y borra trazos/formas enteros">◪</button>
+    <button class="ibtn dz-toolbtn" data-tool="dropper" title="Cuentagotas (I): clic en un elemento toma su relleno y trazo">💧</button>
+    <button class="ibtn dz-toolbtn" data-tool="bucket" title="Balde (G): clic en un elemento le aplica el relleno actual (Shift: el trazo)">🪣</button>
     <div class="vsep"></div>
-    <button class="ibtn" id="dzAddRect" title="Agregar rectángulo">▭</button>
-    <button class="ibtn" id="dzAddCircle" title="Agregar círculo">◯</button>
-    <button class="ibtn" id="dzAddText" title="Agregar texto">T</button>
-    <button class="ibtn" id="dzAddLine" title="Agregar línea">⟋</button>
+    <button class="ibtn" id="dzAddRect" title="Rectángulo (R)">▭</button>
+    <button class="ibtn" id="dzAddCircle" title="Círculo">◯</button>
+    <button class="ibtn" id="dzAddEllipse" title="Elipse (O)">⬭</button>
+    <button class="ibtn" id="dzAddPoly" title="Polígono (6 lados — editable con nodos)">⬡</button>
+    <button class="ibtn" id="dzAddStar" title="Estrella (5 puntas — editable con nodos)">✶</button>
+    <button class="ibtn" id="dzAddText" title="Texto (T)">T</button>
+    <button class="ibtn" id="dzAddLine" title="Línea (L)">⟋</button>
+    <button class="ibtn" id="dzImg" title="Importar imagen como referencia/calco (nivel de OpenToonz)">📷</button>
+    <div class="vsep"></div>
+    <button class="ibtn" id="dzGroup" title="Agrupar la selección (Ctrl+G) · con Shift desagrupa">⧉</button>
     <button class="ibtn" id="dzDup" title="Duplicar seleccionado (Ctrl+D)">⎘</button>
     <button class="ibtn" id="dzDel" title="Borrar seleccionado (Supr)">🗑</button>
     <div class="vsep"></div>
@@ -212,6 +220,7 @@
   <div class="dz-body">
     <div class="dz-canvas" id="dzCanvas">
       <div class="dz-handle" id="dzHandle" title="Arrastrá: agrandar/achicar proporcional · Shift: deformar (estirar)" hidden></div>
+      <div class="dz-rotate" id="dzRotate" title="Arrastrá para rotar · Shift: de a 15°" hidden>⟳</div>
       <div class="dz-pin" id="dzPin" hidden>💬</div>
     </div>
     <div class="dz-code" id="dzCode" hidden>
@@ -223,6 +232,26 @@
       </div>
     </div>
     <div class="dz-inspector" id="dzInspector">
+      <!-- estilo actual (Illustrator): aplica a la selección, o a lo próximo que dibujes -->
+      <div class="dz-style" id="dzStyle">
+        <div class="dz-style-row">
+          <label class="dz-swatch-l" title="Relleno — clic derecho: sin relleno">
+            <input type="color" id="dzFill" value="#E5322D"><span>Relleno</span>
+          </label>
+          <button class="dz-none" id="dzFillNone" title="Sin relleno">∅</button>
+          <label class="dz-swatch-l" title="Trazo — clic derecho: sin trazo">
+            <input type="color" id="dzStroke" value="#1a1a1a"><span>Trazo</span>
+          </label>
+          <button class="dz-none" id="dzStrokeNone" title="Sin trazo">∅</button>
+          <input type="number" id="dzDrawW" value="6" min="0" max="120" title="Grosor de trazo" class="dz-win">
+        </div>
+        <div class="dz-style-row">
+          <span class="dz-hint">Opacidad</span>
+          <input type="range" id="dzOpacity" min="5" max="100" value="100" title="Opacidad del elemento">
+          <span class="dz-hint" id="dzOpacityLbl">100%</span>
+        </div>
+        <div class="dz-palette" id="dzPalette" title="Paleta del proyecto — clic: aplicar relleno · Shift+clic: trazo · clic derecho: quitar"></div>
+      </div>
       <div id="dzLayers"></div>
       <div class="dz-empty" id="dzEmpty">Hacé clic en un elemento para editarlo o moverlo (arrastrá),<br>o pedile un cambio a Fidel abajo.</div>
       <div id="dzProps" hidden></div>
@@ -242,8 +271,12 @@
       <option value="1">1</option><option value="2" selected>2</option><option value="3">3</option>
     </select>
     <div class="tl-frames" id="tlFrames"></div>
-    <button class="ibtn" id="tlAdd" title="Duplicar este cuadro → cuadro siguiente">＋</button>
+    <button class="ibtn" id="tlAdd" title="Duplicar este cuadro al FINAL (flujo clásico: dibujar sobre la copia)">＋</button>
+    <button class="ibtn" id="tlIns" title="Insertar copia de este cuadro JUSTO DESPUÉS (renumera los siguientes) · Shift: cuadro en blanco">⎀</button>
+    <button class="ibtn" id="tlTween" title="🪄 Intercalar: genera el cuadro intermedio entre este y el siguiente (interpola posición, tamaño, color y trazados)">🪄</button>
     <button class="ibtn" id="tlDel" title="Borrar este cuadro">🗑</button>
+    <div class="vsep"></div>
+    <button class="ibtn" id="tlExport" title="Exportar la animación: GIF, secuencia PNG o spritesheet">🎬</button>
     <span class="dz-hint" id="tlInfo"></span>
   </div>
   <!-- chat/prompt del diseño: pedirle correcciones al agente sin salir del editor -->

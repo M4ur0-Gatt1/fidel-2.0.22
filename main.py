@@ -41,7 +41,7 @@ ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.14.0"
+FIDEL_VERSION = "2.15.0"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -633,6 +633,103 @@ class Api:
             return {"error": str(e)}
         rest = [f for f in frames if f != str(p)]
         return {"path": rest[min(i, len(rest) - 1)]}
+
+    def insert_frame(s, path, content=None):
+        """Inserta un cuadro NUEVO justo después del dado, renumerando los
+        siguientes (flujo OpenToonz: intercalar en medio de la secuencia).
+        content: SVG del cuadro nuevo; None = copia del cuadro actual."""
+        p = Path(path)
+        m = s._FRAME_RX.match(p.name)
+        if not m:
+            return {"error": "no es un cuadro (_fNNN.svg)"}
+        base, cur = m.group(1), int(m.group(2))
+        frames = s.list_frames(path)["frames"]
+        try:
+            # renumerar de atrás hacia adelante: _f005→_f006, _f004→_f005…
+            nums = sorted((int(s._FRAME_RX.match(Path(f).name).group(2))
+                           for f in frames), reverse=True)
+            for n in nums:
+                if n <= cur:
+                    break
+                src = p.with_name(f"{base}_f{n:03d}.svg")
+                src.rename(p.with_name(f"{base}_f{n + 1:03d}.svg"))
+            out = p.with_name(f"{base}_f{cur + 1:03d}.svg")
+            if content is None:
+                content = p.read_text(encoding="utf-8", errors="replace")
+            out.write_text(content, encoding="utf-8")
+        except OSError as e:
+            return {"error": str(e)}
+        s._push("ws", {"ws": s.ws, "tree": s._tree(), "branch": s._git_branch()})
+        return {"path": str(out)}
+
+    def export_anim(s, path, frames_png, fps=12, kind="gif"):
+        """Exporta la animación: el frontend rasteriza cada cuadro a PNG dataURL
+        y acá se arma el archivo final. kind: 'gif' (Pillow) o 'png' (secuencia).
+        Devuelve {path} del resultado o {error}."""
+        p = Path(path)
+        m = s._FRAME_RX.match(p.name)
+        stem = m.group(1) if m else p.stem
+        outdir = p.parent / "export"
+        try:
+            outdir.mkdir(parents=True, exist_ok=True)
+            imgs = []
+            for i, du in enumerate(frames_png):
+                b64 = du.split(",", 1)[1] if "," in du else du
+                imgs.append(base64.b64decode(b64))
+            if kind == "png":
+                for i, raw in enumerate(imgs):
+                    (outdir / f"{Path(stem).name}_{i + 1:03d}.png").write_bytes(raw)
+                s._push("ws", {"ws": s.ws, "tree": s._tree(), "branch": s._git_branch()})
+                return {"path": str(outdir), "n": len(imgs)}
+            if kind == "sheet":                 # el frontend ya compuso la grilla
+                out = outdir / f"{Path(stem).name}_sheet.png"
+                out.write_bytes(imgs[0])
+                s._push("ws", {"ws": s.ws, "tree": s._tree(), "branch": s._git_branch()})
+                return {"path": str(out), "n": 1}
+            # GIF (y spritesheet los arma el frontend en canvas)
+            try:
+                from PIL import Image
+            except ImportError:
+                return {"error": "exportar GIF necesita Pillow: pip install pillow "
+                                 "(la secuencia PNG funciona sin nada)"}
+            import io
+            pil = [Image.open(io.BytesIO(raw)).convert("RGB") for raw in imgs]
+            if not pil:
+                return {"error": "no llegó ningún cuadro"}
+            out = outdir / f"{Path(stem).name}.gif"
+            dur = max(20, round(1000 / max(1, int(fps or 12))))
+            pil[0].save(out, save_all=True, append_images=pil[1:],
+                        duration=dur, loop=0, optimize=True)
+            s._push("ws", {"ws": s.ws, "tree": s._tree(), "branch": s._git_branch()})
+            return {"path": str(out), "n": len(pil)}
+        except (OSError, ValueError) as e:
+            return {"error": str(e)}
+
+    def import_ref_image(s):
+        """Abre el diálogo de archivos y devuelve la imagen elegida como data URI
+        para sumarla al lienzo como <image> (referencia/calco, nivel OpenToonz)."""
+        if not s._window:
+            return {"error": "sin ventana"}
+        try:
+            r = s._window.create_file_dialog(
+                webview.OPEN_DIALOG, allow_multiple=False,
+                file_types=("Imágenes (*.png;*.jpg;*.jpeg;*.webp;*.gif)",))
+        except Exception as e:
+            return {"error": str(e)}
+        if not r:
+            return {"cancel": True}
+        fp = Path(r[0] if isinstance(r, (list, tuple)) else r)
+        mime = s.IMG_MIME.get(fp.suffix.lower())
+        if not mime:
+            return {"error": f"formato no soportado: {fp.suffix}"}
+        try:
+            raw = fp.read_bytes()
+        except OSError as e:
+            return {"error": str(e)}
+        if len(raw) > 12_000_000:
+            return {"error": "imagen muy pesada (>12MB) — achicala antes"}
+        return {"data": f"data:{mime};base64," + base64.b64encode(raw).decode("ascii"),
+                "name": fp.name}
 
     def new_design(s):
         """Crea un lienzo SVG inicial (con elementos editables) y devuelve su ruta,
