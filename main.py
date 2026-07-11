@@ -41,7 +41,7 @@ ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-FIDEL_VERSION = "2.15.0"
+FIDEL_VERSION = "2.16.0"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -627,10 +627,23 @@ class Api:
         if len(frames) <= 1:
             return {"error": "es el único cuadro — borralo desde el árbol si querés"}
         i = frames.index(str(p)) if str(p) in frames else 0
+        cur = int(s._FRAME_RX.match(p.name).group(2))
         try:
             p.unlink()
         except OSError as e:
             return {"error": str(e)}
+        # descartar la clave de cámara del cuadro borrado y correr las siguientes
+        f = s._scene_path(path)
+        if f.exists():
+            try:
+                sc = json.loads(f.read_text(encoding="utf-8"))
+                sc["keys"] = [k for k in sc.get("keys", []) if k != cur]
+                sc["cam"] = {k: v for k, v in sc.get("cam", {}).items() if int(k) != cur}
+                f.write_text(json.dumps(sc, ensure_ascii=False, indent=1), encoding="utf-8")
+            except (OSError, ValueError, TypeError):
+                pass
+        # ojo: del_frame NO renumera los archivos (quedan huecos válidos),
+        # así que las demás claves conservan su número
         rest = [f for f in frames if f != str(p)]
         return {"path": rest[min(i, len(rest) - 1)]}
 
@@ -659,8 +672,25 @@ class Api:
             out.write_text(content, encoding="utf-8")
         except OSError as e:
             return {"error": str(e)}
+        s._shift_scene(path, cur, +1)   # las claves de cámara/dibujo se corren con los archivos
         s._push("ws", {"ws": s.ws, "tree": s._tree(), "branch": s._git_branch()})
         return {"path": str(out)}
+
+    def _shift_scene(s, path, after, delta):
+        """Corre los índices de la escena (claves de dibujo y de cámara) cuando
+        se inserta (+1) o borra (-1) un cuadro después del número `after`."""
+        f = s._scene_path(path)
+        if not f.exists():
+            return
+        try:
+            sc = json.loads(f.read_text(encoding="utf-8"))
+            sc["keys"] = sorted(k + delta if k > after else k
+                                for k in sc.get("keys", []))
+            sc["cam"] = {str(int(k) + delta if int(k) > after else int(k)): v
+                         for k, v in sc.get("cam", {}).items()}
+            f.write_text(json.dumps(sc, ensure_ascii=False, indent=1), encoding="utf-8")
+        except (OSError, ValueError, TypeError) as e:
+            log(f"shift_scene fallo: {e}")
 
     def export_anim(s, path, frames_png, fps=12, kind="gif"):
         """Exporta la animación: el frontend rasteriza cada cuadro a PNG dataURL
@@ -730,6 +760,68 @@ class Api:
             return {"error": "imagen muy pesada (>12MB) — achicala antes"}
         return {"data": f"data:{mime};base64," + base64.b64encode(raw).decode("ascii"),
                 "name": fp.name}
+
+    # ── escena de animación: cámara, claves y easing por secuencia ──────
+    # Vive en <base>_escena.json al lado de los cuadros (portable con el proyecto).
+    # {"cam": {"1": {"cx","cy","w","rot"}}, "keys": [1,5], "ease": "inout", "fps": 12}
+    def _scene_path(s, path):
+        p = Path(path)
+        m = s._FRAME_RX.match(p.name)
+        base = m.group(1) if m else p.stem
+        return p.with_name(f"{base}_escena.json")
+
+    def scene_get(s, path):
+        f = s._scene_path(path)
+        if not f.exists():
+            return {"scene": {}}
+        try:
+            return {"scene": json.loads(f.read_text(encoding="utf-8"))}
+        except (OSError, ValueError) as e:
+            return {"scene": {}, "error": str(e)}
+
+    def scene_save(s, path, scene):
+        f = s._scene_path(path)
+        try:
+            f.write_text(json.dumps(scene or {}, ensure_ascii=False, indent=1),
+                         encoding="utf-8")
+            return {"ok": True}
+        except OSError as e:
+            return {"error": str(e)}
+
+    def ai_keyframe(s, path, prompt):
+        """✨ El modelo dibuja el PRÓXIMO fotograma clave a partir del cuadro
+        actual + la descripción del movimiento, y se inserta como cuadro nuevo
+        justo después. Es el flujo pose-a-pose de Toon Boom con IA."""
+        if not s.prov:
+            return {"error": "No hay proveedor activo — configurá una API key (⚙)"}
+        p = Path(path)
+        if not s._FRAME_RX.match(p.name):
+            return {"error": "no es un cuadro de animación (_fNNN.svg)"}
+        try:
+            src = p.read_text(encoding="utf-8", errors="replace")[:14000]
+        except OSError as e:
+            return {"error": str(e)}
+        try:
+            r = s.prov.chat(
+                [{"role": "user", "content":
+                  "Este SVG es un FOTOGRAMA de una animación 2D cuadro a cuadro:\n\n" + src +
+                  "\n\nDibujá el SIGUIENTE FOTOGRAMA CLAVE de la animación según esta "
+                  "indicación del animador: «" + (prompt or "continuá el movimiento natural") + "».\n"
+                  "Reglas de animación:\n"
+                  "- Mantené EXACTAMENTE el mismo viewBox, fondo y estilo visual.\n"
+                  "- Mantené la misma cantidad, orden y tipo de elementos siempre que puedas "
+                  "(mové/deformá los existentes en vez de crear otros): así el intercalado "
+                  "automático entre claves funciona.\n"
+                  "- El cambio debe leerse como UNA pose nueva clara (pose-a-pose), no un ajuste sutil.\n"
+                  "Respondé SOLO con el código SVG completo del cuadro nuevo, sin markdown."}],
+                system_prompt="Sos un animador 2D senior (flujo pose a pose estilo Toon Boom/OpenToonz). Respondés únicamente con SVG válido.",
+                temperature=0.7, max_tokens=8000)
+        except Exception as e:
+            return {"error": f"el modelo falló: {e}"}
+        m = re.search(r"<svg.*?</svg>", r.content or "", re.DOTALL)
+        if not m:
+            return {"error": "el modelo no devolvió un SVG válido — probá describir el movimiento más concreto"}
+        return s.insert_frame(path, m.group(0))
 
     def new_design(s):
         """Crea un lienzo SVG inicial (con elementos editables) y devuelve su ruta,

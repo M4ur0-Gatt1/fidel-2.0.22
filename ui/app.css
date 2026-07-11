@@ -550,6 +550,39 @@ footer {
 }
 #designView[hidden] { display: none; }
 .dz-body { flex: 1; display: flex; min-height: 0; }
+/* barra de herramientas lateral (estilo Toon Boom): columna fija a la izquierda */
+.dz-tools {
+  flex: none; width: 44px; display: flex; flex-direction: column; align-items: center;
+  gap: 3px; padding: 8px 4px; background: var(--panel); border-right: 1px solid var(--line);
+  overflow-y: auto;
+}
+.dz-tools .ibtn { width: 32px; height: 32px; font-size: 15px; }
+.dz-tools .hsep { width: 24px; height: 1px; background: var(--line); margin: 5px 0; flex: none; }
+/* cámara: encuadre animable sobre el lienzo */
+.dz-cam {
+  position: absolute; z-index: 4; border: 2px solid #f5a623; border-radius: 4px;
+  background: rgba(245,166,35,.06); cursor: move; box-shadow: 0 0 0 1px rgba(0,0,0,.35);
+}
+.dz-cam[hidden] { display: none; }
+.dz-cam-tag {
+  position: absolute; top: -20px; left: -2px; font: 600 10.5px Figtree, sans-serif;
+  color: #1a1a1a; background: #f5a623; border-radius: 4px 4px 0 0; padding: 1px 7px;
+  white-space: nowrap; pointer-events: none;
+}
+.dz-cam-size {
+  position: absolute; right: -7px; bottom: -7px; width: 13px; height: 13px;
+  background: #f5a623; border: 2px solid #fff; border-radius: 3px; cursor: nwse-resize;
+}
+.dz-cam-rot {
+  position: absolute; top: -30px; left: 50%; transform: translateX(-50%);
+  width: 18px; height: 18px; line-height: 16px; text-align: center; font-size: 12px;
+  background: #f5a623; color: #1a1a1a; border-radius: 50%; cursor: grab;
+}
+/* badges del X-sheet: clave de dibujo (🔑) y de cámara (📹) */
+.tl-key {
+  position: absolute; right: 2px; top: 2px; z-index: 2; font-size: 9px;
+  background: rgba(0,0,0,.55); border-radius: 4px; padding: 0 3px; line-height: 13px;
+}
 .dz-canvas {
   flex: 1; overflow: auto; display: flex; align-items: center; justify-content: center;
   padding: 24px; min-width: 0;
