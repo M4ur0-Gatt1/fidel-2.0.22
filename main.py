@@ -3394,9 +3394,9 @@ class Api:
                     return msgs(s._remember(arg_m))
                 pm = s._load_project_memory()
                 if not pm:
-                return msgs("📌 Este proyecto todavía no tiene memoria. Se va llenando "
-                            "sola cuando el agente descubre cosas durables, o agregá con "
-                            "«/memoria <hecho>». Vive en .low/memoria.md")
+                    return msgs("📌 Este proyecto todavía no tiene memoria. Se va llenando "
+                                "sola cuando el agente descubre cosas durables, o agregá con "
+                                "«/memoria <hecho>». Vive en .low/memoria.md")
                 return msgs("📌 Memoria de este proyecto (se le reinyecta al agente):\n" + pm[:2500])
             if cmd == "git" and arg:
                 return msgs(s._exec_tool("git", {"args": arg}, "", "python"))
