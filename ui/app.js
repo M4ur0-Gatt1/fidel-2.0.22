@@ -503,6 +503,13 @@ function bind() {
   $("#dzCanvas").addEventListener("pointermove", dzDrawMove);
   $("#dzCanvas").addEventListener("pointerup", dzDrawUp);
   $("#dzCanvas").addEventListener("dblclick", () => { if (PEN) dzPenFinish(false); });
+  // zoom con la rueda del mouse (Alt+scroll = zoom hacia el cursor, pro).
+  // Sin Alt la rueda no hace nada raro: dejamos el gesto para el zoom explícito.
+  $("#dzCanvas").addEventListener("wheel", (e) => {
+    if (!e.altKey) return;
+    e.preventDefault();
+    dzZoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX, e.clientY);
+  }, { passive: false });
   // animación
   $("#dzAnim").onclick = dzAnimToggle;
   $("#tlPlay").onclick = dzAnimPlay;
@@ -663,6 +670,13 @@ function bind() {
     }
     if (e.ctrlKey && e.key.toLowerCase() === "g") {
       e.preventDefault(); dzGroupSel(e.shiftKey);
+    }
+    // Z = acercar · Alt+Z = alejar (zoom estilo OpenToonz, centrado en la mesa)
+    if (!e.ctrlKey && !e.metaKey && e.key.toLowerCase() === "z") {
+      e.preventDefault();
+      const c = $("#dzCanvas").getBoundingClientRect();
+      dzZoomAt(e.altKey ? 1 / 1.2 : 1.2, c.left + c.width / 2, c.top + c.height / 2);
+      return;
     }
     // atajos configurables (⚙ Preferencias): una tecla → una acción
     if (!e.ctrlKey && !e.altKey && !e.metaKey && e.key.length === 1) {
@@ -1828,6 +1842,25 @@ function dzPanMaybe(e, force) {
   return true;
 }
 function dzZoom(delta) { DZ.zoom = Math.min(4, Math.max(0.2, Math.round((DZ.zoom + delta) * 100) / 100)); dzApplyZoom(); }
+/* zoom HACIA UN PUNTO de pantalla (cursor): el punto bajo el mouse queda fijo
+   mientras el lienzo crece/achica — comportamiento pro (OpenToonz/Blender).
+   Compensa el pan para que el ancla no se corra. factor >1 acerca, <1 aleja. */
+function dzZoomAt(factor, clientX, clientY) {
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (!svg) { dzZoom(factor > 1 ? 0.15 : -0.15); return; }
+  const z0 = DZ.zoom;
+  const z1 = Math.min(6, Math.max(0.1, Math.round(z0 * factor * 100) / 100));
+  const k = z1 / z0;
+  if (k === 1) return;
+  // centro visual actual del lienzo en pantalla (incluye el pan ya aplicado)
+  const r = svg.getBoundingClientRect();
+  const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+  // el offset cursor→centro se escala por k; ajusto el pan para cancelar la deriva
+  DZ.panX = (DZ.panX || 0) + (clientX - cx) * (1 - k);
+  DZ.panY = (DZ.panY || 0) + (clientY - cy) * (1 - k);
+  DZ.zoom = z1;
+  dzApplyZoom();
+}
 
 function dzSelect(el) {
   if (DZ.sel) DZ.sel.classList.remove("dz-sel");
