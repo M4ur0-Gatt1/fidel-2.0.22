@@ -1,9 +1,9 @@
-"""Build de Fidel para Windows: icono -> Fidel.exe -> instalador.
+"""Build de LOW para Windows: icono -> LOW.exe -> instalador.
 Uso: python build_exe.py
 
 Genera:
-  dist/Fidel.exe                (PyInstaller, onefile, con icono)
-  Output/FidelSetup-<ver>.exe   (Inno Setup, si ISCC esta instalado)
+  dist/LOW.exe                (PyInstaller, onefile, con icono)
+  Output/LOWSetup-<ver>.exe   (Inno Setup, si ISCC esta instalado)
 
 Consejo: correr desde una copia local del proyecto, no desde el NAS
 (PyInstaller sobre UNC es lento y a veces falla).
@@ -22,7 +22,7 @@ if not os.path.exists("low.ico"):
 subprocess.check_call([sys.executable, "-m", "pip", "install", "--quiet", "pyinstaller"])
 subprocess.check_call([sys.executable, "-m", "PyInstaller", "Fidel.spec",
                        "--noconfirm", "--clean"])
-print("\nOK: dist/Fidel.exe")
+print("\nOK: dist/LOW.exe")
 
 # 3. instalador (opcional: necesita Inno Setup -> winget install JRSoftware.InnoSetup)
 iscc_paths = [
@@ -33,7 +33,7 @@ iscc_paths = [
 iscc = next((p for p in iscc_paths if os.path.exists(p)), None)
 if iscc:
     subprocess.check_call([iscc, "fidel_installer.iss"])
-    print("\nOK: Output/FidelSetup-*.exe")
+    print("\nOK: Output/LOWSetup-*.exe")
 else:
     print("\nAviso: Inno Setup no encontrado; instalador omitido.")
     print("Instalarlo con: winget install JRSoftware.InnoSetup")

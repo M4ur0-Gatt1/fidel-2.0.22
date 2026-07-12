@@ -1,4 +1,4 @@
-; Instalador de Fidel â€” editor de cÃ³digo con agente IA
+; Instalador de LOW — editor de diseño/animación con agente IA
 ; Compilar: ISCC.exe fidel_installer.iss
 
 #define AppName "LOW"
