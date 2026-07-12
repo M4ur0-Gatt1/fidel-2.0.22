@@ -67,10 +67,12 @@ header {
   border-bottom: 1px solid var(--line); background: var(--panel);
 }
 .brand { display: flex; align-items: center; gap: 9px; }
-/* LOW: rayo naranja en círculo (Bowie bolt) + wordmark con ⚡ como O */
-.logo-bolt { width: 26px; height: 26px; flex: none; }
-.wordmark { font-weight: 800; font-size: 16px; letter-spacing: .5px; }
-.wm-bolt { color: #F26522; font-size: 13px; vertical-align: 1px; }
+/* LOW: wordmark blanco con el rayo Bowie partido (naranja/cyan) como la O */
+.wordmark {
+  display: inline-flex; align-items: center;
+  font-weight: 900; font-size: 20px; letter-spacing: 1px; color: #fff; line-height: 1;
+}
+.wm-bolt { width: 17px; height: 26px; flex: none; margin: 0 -1px; }
 .pill {
   display: flex; align-items: center; gap: 7px; background: var(--panel2);
   border: 1px solid var(--line); border-radius: 9px; padding: 5px 12px;
@@ -939,3 +941,22 @@ footer {
   padding: 9px 0; color: var(--mut); font: 500 12.5px 'Figtree', sans-serif;
 }
 .m-actions .ghost:hover { color: var(--txt); border-color: var(--mut); }
+
+/* ── splash de arranque LOW: aparece y se desvanece solo (CSS puro) ── */
+#lowSplash {
+  position: fixed; inset: 0; z-index: 999; background: #0B0B0C;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 14px; animation: lowSplashOut .5s ease 1.3s forwards;
+}
+#lowSplash svg { width: min(46vw, 360px); height: auto; }
+#lowSplash .sp-l { fill: #fff; font: 900 128px 'Figtree', 'Arial Black', sans-serif; }
+#lowSplash .sp-tag {
+  font: 600 13px 'Figtree', sans-serif; letter-spacing: 4px; text-transform: uppercase;
+  color: var(--mut); opacity: 0; animation: lowTagIn .5s ease .3s forwards;
+}
+@keyframes lowTagIn { to { opacity: 1; } }
+@keyframes lowSplashOut { to { opacity: 0; visibility: hidden; } }
+/* logo LOW en la pantalla vacía del editor (sin miedo a la página en blanco) */
+.dz-empty { display: flex; flex-direction: column; align-items: center; gap: 16px; }
+.dz-empty-logo { width: 190px; height: auto; opacity: .9; }
+.dz-empty-logo .sp-l { fill: var(--txt); font: 900 128px 'Figtree', 'Arial Black', sans-serif; }

@@ -15,7 +15,7 @@ import sys
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 # 1. icono (requiere Pillow)
-if not os.path.exists("fidel.ico"):
+if not os.path.exists("low.ico"):
     subprocess.check_call([sys.executable, "make_icon.py"])
 
 # 2. exe

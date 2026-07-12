@@ -6,7 +6,7 @@ a = Analysis(
     pathex=[],
     binaries=[],
     datas=[('providers', 'providers'), ('code_runner', 'code_runner'), ('config.py', '.'),
-           ('fidel.ico', '.'), ('ui', 'ui')],
+           ('low.ico', '.'), ('ui', 'ui')],
     hiddenimports=['providers', 'providers.transport', 'providers.nvidia_provider',
                    'code_runner', 'webview.platforms.winforms',
                    'webview.platforms.edgechromium', 'webview.platforms.cocoa',
@@ -39,5 +39,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon='fidel.ico',
+    icon='low.ico',
 )
