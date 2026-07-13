@@ -1,6 +1,6 @@
 """LOW — editor de código con agente IA multi-proveedor.
 
-UI web (pywebview + WebView2) que implementa design_handoff_fidel_editor 1:1.
+UI web (pywebview + WebView2) que implementa design_handoff_low_editor 1:1.
 Este módulo es el puente: expone la lógica Python (providers, runner, config)
 como js_api para ui/app.js. La versión CustomTkinter quedó en main_ctk.py.
 """

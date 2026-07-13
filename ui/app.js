@@ -47,7 +47,7 @@ const S = {
 };
 const icoUse = name => `<svg class="ico"><use href="#${name}"/></svg>`;
 
-/* ── errores SIEMPRE visibles: en el chat y en %APPDATA%/Fidel/fidel.log ── */
+/* ── errores SIEMPRE visibles: en el chat y en %APPDATA%/LOW/low.log ── */
 window.__errs = [];
 function reportErr(msg) {
   window.__errs.push(msg);
@@ -487,12 +487,12 @@ function bind() {
   dzPaletteRender();
   // preferencias del estudio: atajos configurables + suavizado persistente
   dzKeysLoad();
-  DZ.smooth = +(localStorage.getItem("fidel.dzsmooth") || 40);
+  DZ.smooth = +(localStorage.getItem("low.dzsmooth") || 40);
   $("#dzSmooth").value = DZ.smooth; $("#dzSmoothLbl").textContent = DZ.smooth;
   $("#dzSmooth").oninput = e => {
     DZ.smooth = +e.target.value;
     $("#dzSmoothLbl").textContent = e.target.value;
-    try { localStorage.setItem("fidel.dzsmooth", String(DZ.smooth)); } catch (err) { /* */ }
+    try { localStorage.setItem("low.dzsmooth", String(DZ.smooth)); } catch (err) { /* */ }
   };
   $("#dzPrefs").onclick = dzPrefsModal;
   $("#dzRotate").addEventListener("mousedown", dzRotateDown);
@@ -1455,15 +1455,15 @@ function makeRowSplitter(el, target, key) {
 }
 function restorePanelSizes() {
   try {
-    const tw = localStorage.getItem("fidel.tree.w"); if (tw) $("#treewrap").style.width = tw;
-    const aw = localStorage.getItem("fidel.agent.w"); if (aw) $("#agentPanel").style.width = aw;
-    const th = localStorage.getItem("fidel.term.h"); if (th) $("#termOut").style.height = th;
+    const tw = localStorage.getItem("low.tree.w"); if (tw) $("#treewrap").style.width = tw;
+    const aw = localStorage.getItem("low.agent.w"); if (aw) $("#agentPanel").style.width = aw;
+    const th = localStorage.getItem("low.term.h"); if (th) $("#termOut").style.height = th;
   } catch (e) { /* */ }
 }
 function initSplitters() {
-  makeColSplitter($("#splitTree"), $("#treewrap"), "left", "fidel.tree.w");
-  makeColSplitter($("#splitAgent"), $("#agentPanel"), "right", "fidel.agent.w");
-  makeRowSplitter($("#splitTerm"), $("#termOut"), "fidel.term.h");
+  makeColSplitter($("#splitTree"), $("#treewrap"), "left", "low.tree.w");
+  makeColSplitter($("#splitAgent"), $("#agentPanel"), "right", "low.agent.w");
+  makeRowSplitter($("#splitTerm"), $("#termOut"), "low.term.h");
 }
 
 /* ── tabla de posiciones histórica de los desafíos ── */
@@ -2415,7 +2415,7 @@ function dzStyleSync(el) {
   op.value = o === null ? 100 : Math.round(parseFloat(o) * 100);
   $("#dzOpacityLbl").textContent = op.value + "%";
 }
-function dzPaletteKey() { return "fidel.palette." + (S.ws || "global"); }
+function dzPaletteKey() { return "low.palette." + (S.ws || "global"); }
 function dzPaletteLoad() {
   try { return JSON.parse(localStorage.getItem(dzPaletteKey()) || "[]"); }
   catch (e) { return []; }
@@ -2520,7 +2520,7 @@ function dzDrawDown(e) {
     DRAW.el.setAttribute("stroke-linejoin", "round");
   } else {                                             // pincel: grosor por presión
     DRAW.el = document.createElementNS(SVGNS, "g");
-    DRAW.el.setAttribute("data-fidel", "brush");
+    DRAW.el.setAttribute("data-low", "brush");
     DRAW.el.setAttribute("stroke", DZ.drawColor || "#F0450E");
     DRAW.el.setAttribute("fill", "none");
     DRAW.el.setAttribute("stroke-linecap", "round");
@@ -2648,7 +2648,7 @@ function dzBrushRibbon(pts, baseW, color) {
   el.setAttribute("d", d);
   el.setAttribute("fill", color);
   el.setAttribute("stroke", "none");
-  el.setAttribute("data-fidel", "brush");
+  el.setAttribute("data-low", "brush");
   return el;
 }
 
@@ -2822,13 +2822,13 @@ const DZ_KEY_LABELS = {
 };
 function dzKeysLoad() {
   let saved = {};
-  try { saved = JSON.parse(localStorage.getItem("fidel.dzkeys") || "{}"); } catch (e) { /* */ }
+  try { saved = JSON.parse(localStorage.getItem("low.dzkeys") || "{}"); } catch (e) { /* */ }
   DZ.keymap = { ...DZ_KEY_DEFAULTS, ...saved };
   DZ.keyrev = {};
   for (const [act, k] of Object.entries(DZ.keymap)) if (k) DZ.keyrev[k] = act;
 }
 function dzKeysSave() {
-  try { localStorage.setItem("fidel.dzkeys", JSON.stringify(DZ.keymap)); } catch (e) { /* */ }
+  try { localStorage.setItem("low.dzkeys", JSON.stringify(DZ.keymap)); } catch (e) { /* */ }
   dzKeysLoad();
 }
 function dzRunAction(act) {
@@ -2893,7 +2893,7 @@ function dzPrefsModal() {
     DZ.smooth = +e.target.value;
     $("#prefSmoothLbl").textContent = e.target.value;
     const s = $("#dzSmooth"); if (s) { s.value = e.target.value; $("#dzSmoothLbl").textContent = e.target.value; }
-    try { localStorage.setItem("fidel.dzsmooth", String(DZ.smooth)); } catch (err) { /* */ }
+    try { localStorage.setItem("low.dzsmooth", String(DZ.smooth)); } catch (err) { /* */ }
   };
   $("#prefReset").onclick = () => {
     DZ.keymap = { ...DZ_KEY_DEFAULTS };
@@ -3080,8 +3080,8 @@ function dzEraseStart(e) {
     if (!inSvg || el === svg) return;
     const t = el.tagName.toLowerCase();
     if (!["path", "line", "circle", "rect", "ellipse", "polygon", "polyline", "text", "tspan", "image"].includes(t)) return;
-    // los trazos de pincel viven en un <g data-fidel=brush>: borrar el grupo entero
-    let target = el.closest('g[data-fidel="brush"]') || (t === "tspan" ? el.closest("text") : el);
+    // los trazos de pincel viven en un <g data-low=brush>: borrar el grupo entero
+    let target = el.closest('g[data-low="brush"]') || (t === "tspan" ? el.closest("text") : el);
     // no borrar el rect de fondo (cubre casi todo el lienzo)
     if (t === "rect") {
       const vb = (svg.getAttribute("viewBox") || "0 0 1080 1080").split(/\s+/).map(Number);
