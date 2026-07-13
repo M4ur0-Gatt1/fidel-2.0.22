@@ -68,6 +68,16 @@ DEFAULT_CONFIG = {
         # No es un modelo de chat: no entra en la cadena de failover del agente.
         # Key: https://console.ltx.video/api-keys
         "ltx": {"api_key": "", "model": "ltx-2-3-fast", "base_url": ""},
+        # fal.ai — GATEWAY universal de imagen/video: una key para 1000+ modelos
+        # (Seedance, Flux, Kling, Wan, Veo, Seedream...). SOLO media (no chatea).
+        # Key: https://fal.ai/dashboard/keys. Cambiar de modelo = cambiar el model id
+        # (ver fal.ai/models). model = video texto→video; i2v_model = imagen→video;
+        # image_model = generación de imagen.
+        "fal": {"api_key": "",
+                "model": "bytedance/seedance-2.0/text-to-video",
+                "i2v_model": "bytedance/seedance-2.0/image-to-video",
+                "image_model": "fal-ai/flux/schnell",
+                "base_url": ""},
     }
 }
 

@@ -11,12 +11,13 @@ from providers.nvidia_provider import NVIDIAProvider
 from providers.siliconflow_provider import SiliconFlowProvider
 from providers.digitalocean_provider import DigitalOceanProvider
 from providers.ltx_provider import LTXProvider
+from providers.fal_provider import FALProvider
 
 PROVIDERS = {
     "groq": GroqProvider, "openai": OpenAIProvider, "anthropic": AnthropicProvider,
     "deepseek": DeepSeekProvider, "qwen": QwenProvider, "glm": GLMProvider,
     "xai": XAIProvider, "nvidia": NVIDIAProvider, "siliconflow": SiliconFlowProvider,
-    "digitalocean": DigitalOceanProvider, "ltx": LTXProvider,
+    "digitalocean": DigitalOceanProvider, "ltx": LTXProvider, "fal": FALProvider,
     "custom": CustomProvider,
 }
 

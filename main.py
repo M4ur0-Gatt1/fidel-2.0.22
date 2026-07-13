@@ -41,7 +41,7 @@ ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-LOW_VERSION = "3.7.0"
+LOW_VERSION = "3.8.0"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -1210,7 +1210,7 @@ class Api:
     # lentos como glm-5.2 al saltar: queremos que responda YA, no que piense 40s)
     # proveedores que NO son de chat (solo medios): nunca entran en la cadena
     # de failover ni se ofrecen como modelo del agente
-    MEDIA_ONLY = {"ltx"}
+    MEDIA_ONLY = {"ltx", "fal"}
 
     FAST_MODEL = {
         "groq": "openai/gpt-oss-120b",
@@ -2025,11 +2025,109 @@ class Api:
             detail = r.text[:200]
         return None, f"LTX {r.status_code}: {detail}"
 
+    # ── fal.ai: gateway universal (Seedance, Flux, Kling, Wan, Veo…). Queue API:
+    # POST https://queue.fal.run/<model_id> → {request_id, status_url, response_url};
+    # se poolea status_url hasta COMPLETED y se lee response_url. Auth: "Key <k>".
+    def _fal_run(s, model_id, body, kind="video"):
+        """Somete un job a fal.ai, poolea hasta COMPLETED y devuelve (bytes, error).
+        kind = 'video' | 'image' (para saber qué URL extraer del resultado)."""
+        key = s.cfg.get_api_key("fal")
+        if not key:
+            return None, "fal.ai necesita API key (⚙ → fal · fal.ai/dashboard/keys)"
+        hdr = {"Authorization": f"Key {key}", "Content-Type": "application/json"}
+        try:
+            r = requests.post(f"https://queue.fal.run/{model_id}", headers=hdr,
+                              json=body, timeout=60)
+            if not r.ok:
+                return None, f"fal.ai submit {r.status_code}: {r.text[:200]}"
+            j = r.json()
+        except (requests.RequestException, ValueError) as e:
+            return None, f"fal.ai submit: {e}"
+        status_url, response_url = j.get("status_url"), j.get("response_url")
+        if not response_url:                      # respuesta síncrona (sin cola)
+            return s._fal_extract(j, kind)
+        s._push("sys", f"🎬 Generando con fal.ai ({model_id})…")
+        for i in range(90):                       # hasta ~15 min
+            time.sleep(10)
+            try:
+                st = requests.get(status_url, headers=hdr, timeout=30).json()
+            except (requests.RequestException, ValueError):
+                continue
+            state = st.get("status")
+            if i % 6 == 5:
+                s._push("sys", f"🎬 fal.ai: {state}… ({(i + 1) * 10}s)")
+            if state == "COMPLETED":
+                try:
+                    out = requests.get(response_url, headers=hdr, timeout=60).json()
+                except (requests.RequestException, ValueError) as e:
+                    return None, f"fal.ai result: {e}"
+                return s._fal_extract(out, kind)
+            if state in ("FAILED", "ERROR"):
+                return None, f"fal.ai falló: {str(st.get('error') or st)[:200]}"
+        return None, "fal.ai timeout (>15 min)"
+
+    def _fal_extract(s, out, kind):
+        """Extrae la URL de media del resultado de fal y descarga los bytes."""
+        url = None
+        if kind == "video":
+            v = out.get("video")
+            if isinstance(v, dict):
+                url = v.get("url")
+            if not url:
+                vids = out.get("videos") or []
+                url = vids[0].get("url") if vids else None
+        else:
+            imgs = out.get("images") or []
+            if imgs:
+                url = imgs[0].get("url")
+            else:
+                img = out.get("image")
+                url = img.get("url") if isinstance(img, dict) else None
+        if not url:
+            return None, f"fal.ai: respuesta sin media ({str(out)[:150]})"
+        try:
+            m = requests.get(url, timeout=180)
+            m.raise_for_status()
+            return m.content, None
+        except requests.RequestException as e:
+            return None, f"fal.ai descarga: {e}"
+
+    def _fal_cfg(s, key, default):
+        return s.cfg.data.get("providers", {}).get("fal", {}).get(key) or default
+
+    def _fal_video(s, prompt, image_path=None):
+        if image_path:
+            model = s._fal_cfg("i2v_model", "bytedance/seedance-2.0/image-to-video")
+            data_url, err = s._source_dataurl(image_path)
+            if err:
+                return None, err
+            body = {"prompt": prompt, "image_url": data_url}
+        else:
+            model = s._fal_cfg("model", "bytedance/seedance-2.0/text-to-video")
+            body = {"prompt": prompt}
+        return s._fal_run(model, body, "video")
+
+    def _fal_image(s, prompt, size="1024x1024", seed=None):
+        model = s._fal_cfg("image_model", "fal-ai/flux/schnell")
+        body = {"prompt": prompt}
+        if seed is not None:
+            try:
+                body["seed"] = int(seed)
+            except (TypeError, ValueError):
+                pass
+        return s._fal_run(model, body, "image")
+
     def _gen_video_any(s, prompt, image_path=None):
-        """Despachador de video: LTX primero si hay key (rápido, con audio,
-        hasta 4K/20s); si falla o no está, cae a Wan en SiliconFlow. Devuelve
+        """Despachador de video: fal.ai (Seedance, universal) primero si hay key;
+        luego LTX (rápido, con audio) y por último Wan en SiliconFlow. Devuelve
         (bytes, proveedor_usado, error)."""
         errs = []
+        if s.cfg.get_api_key("fal"):
+            data, err = s._fal_video(prompt, image_path=image_path)
+            if data:
+                return data, "fal.ai (Seedance)", None
+            errs.append(err)
+            s._push("sys", f"⚠ fal.ai falló ({str(err)[:110]}) → pruebo otro proveedor…")
         if s.cfg.get_api_key("ltx"):
             data, err = s._ltx_video(prompt, image_path=image_path)
             if data:
@@ -2118,7 +2216,13 @@ class Api:
         """Genera una imagen con la primera API disponible: OpenAI (dall-e-3)
         y si no hay key, SiliconFlow (con fallback dinámico al catálogo en vivo).
         Devuelve (bytes, proveedor_usado, error) — uno de (bytes, error) es no-None."""
-        err_openai = err_sf = None
+        err_fal = err_openai = err_sf = None
+        # fal.ai primero si hay key (universal: Flux/Seedream/etc.)
+        if s.cfg.get_api_key("fal"):
+            data, err = s._fal_image(prompt, size=size, seed=seed)
+            if data:
+                return data, "fal.ai", None
+            err_fal = f"fal.ai: {err}"
         ok = s.cfg.get_api_key("openai")
         if ok:
             try:
@@ -2169,10 +2273,10 @@ class Api:
                     log(f"gen_image {model} falló: {detail}")
                 except requests.RequestException as e:
                     err_sf = f"SiliconFlow {model}: {e}"
-        if not ok and not sk:
-            return None, None, ("no hay API key de OpenAI ni de SiliconFlow cargada — "
+        if not ok and not sk and not s.cfg.get_api_key("fal"):
+            return None, None, ("no hay API key de fal.ai, OpenAI ni SiliconFlow cargada — "
                                  "agregá una en Configuración (⚙) para generar imágenes")
-        return None, None, " · ".join(x for x in (err_openai, err_sf) if x) or "no se pudo generar la imagen"
+        return None, None, " · ".join(x for x in (err_fal, err_openai, err_sf) if x) or "no se pudo generar la imagen"
 
     # ── documentos .docx (Word) sin dependencias: un docx es un zip con XML ──
     @staticmethod
