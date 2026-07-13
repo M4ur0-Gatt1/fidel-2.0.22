@@ -41,7 +41,7 @@ ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-LOW_VERSION = "3.10.1"
+LOW_VERSION = "3.10.2"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -1532,6 +1532,21 @@ class Api:
         snip = "\n".join(f"{j + 1}: {lines[j]}" for j in range(lo, hi))
         return "Lo más parecido en el archivo (copiá el old_text de acá, tal cual):\n" + snip
 
+    def _run_shell(s, cmd, timeout=30, cwd=None):
+        """Ejecuta un comando shell tolerando rutas UNC como directorio actual.
+        En Windows, cmd.exe NO acepta \\\\server\\share como cwd (los comandos
+        fallan con exit 1/2 sin razón aparente) — pasaba con el workspace en el
+        NAS. Solución: `pushd` mapea la UNC a una letra de unidad temporal y entra
+        ahí; se libera sola al cerrar el proceso. Así el agente no desperdicia
+        tokens reintentando comandos que 'fallan' solo por la ruta UNC."""
+        cwd = str(cwd if cwd is not None else s._base())
+        if os.name == "nt" and cwd.startswith(("\\\\", "//")):
+            # pushd + '&&': el returncode queda el del COMANDO (no el de pushd)
+            return subprocess.run(f'pushd "{cwd}" && {cmd}', shell=True,
+                                  capture_output=True, text=True, timeout=timeout)
+        return subprocess.run(cmd, shell=True, capture_output=True, text=True,
+                              timeout=timeout, cwd=cwd or None)
+
     def _exec_tool(s, name, args, code, lang):
         try:
             if name == "read_file":
@@ -1655,15 +1670,13 @@ class Api:
                 cmd = args.get("command") or args.get("cmd") or ""
                 if not cmd:
                     return "❌ Falta 'command'. Llamá exec_cmd con {\"command\": \"...\"}."
-                r = subprocess.run(cmd, shell=True, capture_output=True,
-                                   text=True, timeout=30, cwd=str(s._base()))
+                r = s._run_shell(cmd, timeout=30)
                 return f"⚡ exit={r.returncode}\n" + ((r.stdout + "\n" + r.stderr).strip()[:3000])
             if name == "git":
                 a = (args.get("args") or "").strip()
                 if not a:
                     return "❌ Faltan argumentos de git (ej: 'commit -m \"msg\"', 'push')"
-                r = subprocess.run("git " + a, shell=True, capture_output=True,
-                                   text=True, timeout=180, cwd=str(s._base()))
+                r = s._run_shell("git " + a, timeout=180)
                 out = (r.stdout + "\n" + r.stderr).strip()
                 return f"⎇ git {a} (exit={r.returncode})\n{out[:3500] or '(sin salida)'}"
             if name == "ssh_exec":
@@ -3648,8 +3661,7 @@ class Api:
                 fp.write_text(ct, encoding="utf-8")
                 return msgs(f"✅ {fp}")
             if cmd == "exec" and arg:
-                r = subprocess.run(arg, shell=True, capture_output=True, text=True,
-                                   timeout=30, cwd=s.ws)
+                r = s._run_shell(arg, timeout=30, cwd=s.ws)
                 return msgs(f"$ {arg}\n{(r.stdout + r.stderr)[:2000]}")
             if cmd in ("lecciones", "lessons"):
                 if arg.strip() in ("borrar", "clear", "reset", "olvidar"):
