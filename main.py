@@ -41,7 +41,7 @@ ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-LOW_VERSION = "3.8.0"
+LOW_VERSION = "3.9.0"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -121,8 +121,19 @@ DEFAULT_SP = ("Eres LOW, agente creativo y programador senior orientado a diseñ
               "Repetir la misma llamada da el mismo error. Al escribir codigo: sintaxis "
               "valida y COMPLETO, sin funciones a medias, TODOs ni placeholders — tiene que "
               "andar. Elegi el lenguaje mas adecuado. Cuando termines de verdad, decilo "
-              "claro. No crees entornos virtuales salvo pedido explicito. Responde en "
-              "espanol, breve.")
+              "claro. No crees entornos virtuales salvo pedido explicito. "
+              "VECTOR/SVG (lo mas dificil de acertar): cada .svg que escribas se rasteriza "
+              "y lo revisa un modelo de vision AUTOMATICAMENTE; te voy a devolver que esta "
+              "mal (proporciones, cosas fuera del viewBox, texto cortado, solapamientos) y "
+              "vas a iterar con edit_file hasta que se vea prolijo — no te frustres, es "
+              "normal ajustar 2-3 veces. Trabaja con una grilla mental de coordenadas y "
+              "verifica que cada elemento este DENTRO del viewBox. "
+              "TAREAS GRANDES: antes de empezar, escribi en 1-2 lineas el plan de pasos, "
+              "despues ejecutalo (menos vueltas perdidas). "
+              "DEPENDENCIAS: si algo falla por un paquete faltante (ModuleNotFoundError, "
+              "'Cannot find module'), instalalo con exec_cmd (pip install / npm install) y "
+              "volve a correr, en vez de rendirte. "
+              "Responde en espanol, breve.")
 
 
 LOG_PATH = data_dir() / 'low.log'
@@ -2713,10 +2724,13 @@ class Api:
             except Exception:
                 pass
         provs = s.cfg.data.get("providers", {})
-        # candidatos conocidos con visión, por preferencia
+        # candidatos conocidos con visión, por preferencia. Incluye DigitalOcean
+        # con un VL abierto (anda en el tier base) para que la crítica funcione con
+        # el setup de DO, no solo con OpenAI/Anthropic (propietarios/gateados).
         cands = [
             ("openai", "gpt-4o"),
             ("siliconflow", "Qwen/Qwen3-VL-8B-Instruct"),
+            ("digitalocean", "nemotron-nano-12b-v2-vl"),
             ("anthropic", "claude-sonnet-4-5"),
             ("qwen", "qwen-vl-plus"),
         ]
@@ -2726,7 +2740,7 @@ class Api:
                     return s._mk_provider(pv, md), f"{pv}/{md}"
                 except Exception:
                     continue
-        return None, "no hay proveedor con visión configurado (OpenAI, SiliconFlow, Anthropic o Qwen)"
+        return None, "no hay proveedor con visión configurado (OpenAI, SiliconFlow, DigitalOcean, Anthropic o Qwen)"
 
     def _critique_design(s, svg, request):
         """Rasteriza el SVG, se lo muestra a un modelo de visión y devuelve una
@@ -2761,27 +2775,31 @@ class Api:
 
     def _check_design_written(s, request):
         """Crítica visual de los .svg escritos este turno (auto-verificación).
-        Desactivable con agent.verify_design=false."""
-        if not s.cfg.data.get("agent", {}).get("verify_design", False):
+        ON por default (el vector es lo más precario de los modelos → hay que mirarlo).
+        Desactivable con agent.verify_design=false. Revisa TODOS los .svg del turno."""
+        if not s.cfg.data.get("agent", {}).get("verify_design", True):
             return ""
         svgs = [p for p in dict.fromkeys(s._written) if p.lower().endswith(".svg")]
         if not svgs:
             return ""
-        p = svgs[-1]                            # el último diseño tocado
-        base = os.path.basename(p)
-        struct = s._check_svg(p)
-        try:
-            svg = Path(p).read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return ""
-        s._push("sys", f"👁 Mirando {base} para revisar el diseño…")
-        visual = s._critique_design(svg, request)
-        parts = []
-        if struct:
-            parts.append("Estructura: " + struct)
-        if visual:
-            parts.append("Revisión visual:\n" + visual)
-        return (f"{base}:\n" + "\n".join(parts)) if parts else ""
+        reports = []
+        for p in svgs[-3:]:                     # hasta 3 diseños tocados este turno
+            base = os.path.basename(p)
+            struct = s._check_svg(p)
+            try:
+                svg = Path(p).read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                continue
+            s._push("sys", f"👁 Mirando {base} para revisar el diseño…")
+            visual = s._critique_design(svg, request)
+            parts = []
+            if struct:
+                parts.append("Estructura: " + struct)
+            if visual:
+                parts.append("Revisión visual:\n" + visual)
+            if parts:
+                reports.append(f"{base}:\n" + "\n".join(parts))
+        return "\n\n".join(reports)
 
     def _run_model(s, ms, sp, temperature, max_tok, use_tools, tools=None):
         """Llama al modelo con STREAMING real: empuja content y reasoning
@@ -3072,9 +3090,9 @@ class Api:
                         # VECTORES: si escribió un .svg, que el modelo lo VEA (render +
                         # crítica visual) y lo corrija — el agente no dibuja a ciegas.
                         dz = s._check_design_written(msg)
-                        if dz and use_tools and design_fixes < 1:
+                        if dz and use_tools and design_fixes < 3:
                             design_fixes += 1
-                            s._push("sys", "👁 Revisé el diseño y hay cosas para mejorar — pidiendo ajuste…")
+                            s._push("sys", f"👁 Revisé el diseño y hay cosas para mejorar — pidiendo ajuste ({design_fixes}/3)…")
                             ms.append({"role": "assistant", "content": text})
                             ms.append({"role": "user", "content":
                                        "Rendericé el SVG y lo revisé visualmente. Observaciones:\n" + dz +

@@ -43,6 +43,9 @@ DEFAULT_CONFIG = {
         # tool gating: qué tools se mandan (menos tokens/req). auto = detecta
         # code/design por sesión; full = todos; code = sin imagen/video; design = todos.
         "tool_profile": "auto",
+        # auto-verificación antes de decir "listo":
+        "verify_runtime": True,   # correr el código y corregir errores de ejecución
+        "verify_design": True,    # rasterizar .svg y criticarlo con visión (vector iterativo)
     },
     # servidores SSH guardados (alias reutilizables para ssh_exec/scp_upload):
     # [{"name": "yungas", "user": "root", "host": "1.2.3.4", "port": "", "key": ""}]
