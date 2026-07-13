@@ -3595,7 +3595,8 @@ function dzExportModal() {
   openModal(`<h2>🎬 Exportar animación</h2>
     <div class="sub">${DZ.anim.frames.length} cuadros a ${$("#tlFps").value || 12} fps → carpeta export/ del proyecto.</div>
     <div class="m-actions" style="flex-wrap:wrap">
-      <button class="primary" data-x="gif">GIF animado</button>
+      <button class="primary" data-x="mp4">Video MP4</button>
+      <button class="ghost" data-x="gif">GIF animado</button>
       <button class="ghost" data-x="png">Secuencia PNG</button>
       <button class="ghost" data-x="sheet">Spritesheet</button>
       <button class="ghost" id="mCancel">Cancelar</button>
@@ -3642,10 +3643,13 @@ async function dzDoExport(kind) {
     dzSetStatus(r && r.error ? "❌ " + r.error : "🎬 Spritesheet exportado (" + cols + "×" + rows + ") → " + ((r && r.path) || "export/"));
   } else {
     const fps = Math.max(1, Math.min(60, +$("#tlFps").value || 12));
-    dzSetStatus(kind === "gif" ? "🎬 Armando el GIF…" : "🎬 Guardando la secuencia…");
+    const label = { mp4: "🎬 Codificando MP4 con ffmpeg…", webm: "🎬 Codificando WebM…",
+                    gif: "🎬 Armando el GIF…" }[kind] || "🎬 Guardando la secuencia…";
+    dzSetStatus(label);
     const r = await api.export_anim(DZ.path, pngs, fps, kind);
-    dzSetStatus(r && r.error ? "❌ " + r.error :
-      "🎬 Exportado → " + ((r && r.path) || "export/") + (kind === "gif" ? " (GIF a " + fps + " fps)" : " (" + pngs.length + " PNGs)"));
+    const done = { mp4: " (MP4 a " + fps + " fps)", webm: " (WebM a " + fps + " fps)",
+                   gif: " (GIF a " + fps + " fps)" }[kind] || " (" + pngs.length + " PNGs)";
+    dzSetStatus(r && r.error ? "❌ " + r.error : "🎬 Exportado → " + ((r && r.path) || "export/") + done);
   }
   try { S.tree = (await api.refresh_tree()).tree; renderTree(); } catch (e) { /* */ }
 }

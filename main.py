@@ -41,7 +41,7 @@ ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-LOW_VERSION = "3.13.0"
+LOW_VERSION = "3.14.0"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -813,6 +813,36 @@ class Api:
                 out.write_bytes(imgs[0])
                 s._push("ws", {"ws": s.ws, "tree": s._tree(), "branch": s._git_branch()})
                 return {"path": str(out), "n": 1}
+            if kind in ("mp4", "webm"):
+                # Video real con ffmpeg (no necesita Pillow). Los cuadros ya vienen
+                # rasterizados como PNG del frontend → los escribo a temp y encodeo.
+                import shutil
+                import tempfile
+                ff = shutil.which("ffmpeg")
+                if not ff:
+                    return {"error": "exportar MP4 necesita ffmpeg en el PATH "
+                                     "(probá GIF o secuencia PNG, que no lo necesitan)"}
+                if not imgs:
+                    return {"error": "no llegó ningún cuadro"}
+                tdir = Path(tempfile.mkdtemp())
+                try:
+                    for i, raw in enumerate(imgs):
+                        (tdir / f"f_{i + 1:04d}.png").write_bytes(raw)
+                    out = outdir / f"{Path(stem).name}.{kind}"
+                    fps_v = max(1, int(fps or 12))
+                    vcodec = "libx264" if kind == "mp4" else "libvpx-vp9"
+                    # yuv420p + escala a dimensiones pares = compatible con todos los players
+                    cmd = [ff, "-y", "-framerate", str(fps_v),
+                           "-i", str(tdir / "f_%04d.png"),
+                           "-c:v", vcodec, "-pix_fmt", "yuv420p",
+                           "-vf", "scale=trunc(iw/2)*2:trunc(ih/2)*2", str(out)]
+                    r = subprocess.run(cmd, capture_output=True, text=True, timeout=300)
+                finally:
+                    shutil.rmtree(tdir, ignore_errors=True)
+                if r.returncode != 0 or not out.exists():
+                    return {"error": "ffmpeg falló: " + ((r.stderr or r.stdout or "")[-200:])}
+                s._push("ws", {"ws": s.ws, "tree": s._tree(), "branch": s._git_branch()})
+                return {"path": str(out), "n": len(imgs)}
             # GIF (y spritesheet los arma el frontend en canvas)
             try:
                 from PIL import Image
