@@ -201,12 +201,29 @@ class Transport:
         t0 = time.time()
         # timeout (conexión, lectura entre bytes): si un modelo no manda nada por
         # 40s, se corta y arriba se hace failover al siguiente (que ande sí o sí),
-        # en vez de esperar eternamente a un razonador lento o un stream colgado
-        resp = requests.post(
-            f"{self.base_url}/chat/completions",
-            headers=self._headers(),
-            json=body, stream=True, timeout=(15, 40),
-        )
+        # en vez de esperar eternamente a un razonador lento o un stream colgado.
+        # 429/5xx: NO explotar de una — respetar Retry-After y reintentar con backoff
+        # (antes cada 429 caía derecho → "un montón de errores 429"). Solo si persiste
+        # se levanta el error y arriba se hace failover.
+        resp = None
+        for attempt in range(4):
+            resp = requests.post(
+                f"{self.base_url}/chat/completions",
+                headers=self._headers(),
+                json=body, stream=True, timeout=(15, 40),
+            )
+            if resp.status_code in (429, 500, 502, 503, 504) and attempt < 3:
+                try:
+                    wait = float(resp.headers.get("retry-after", ""))
+                except (ValueError, TypeError):
+                    wait = 2 ** attempt + random.random()
+                try:
+                    resp.close()
+                except Exception:
+                    pass
+                time.sleep(min(wait, 20))
+                continue
+            break
         if resp.status_code >= 400:
             try:
                 detail = (resp.json().get("error") or {}).get("message") or resp.text[:300]

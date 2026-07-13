@@ -41,8 +41,11 @@ DEFAULT_CONFIG = {
         "memory_turns": 24,       # turnos de conversación que recuerda en la sesión
         "learn": True,            # Reflexion: aprende de sus errores y los recuerda
         # tool gating: qué tools se mandan (menos tokens/req). auto = detecta
-        # code/design por sesión; full = todos; code = sin imagen/video; design = todos.
+        # code/design/animation por sesión; full = todos; code = sin imagen/video/anim;
+        # design = todos; animation = modo animación con todas las tools de media.
         "tool_profile": "auto",
+        # Modo de trabajo del editor: code | design | animation
+        "editor_mode": "code",
         # auto-verificación antes de decir "listo":
         "verify_runtime": True,   # correr el código y corregir errores de ejecución
         "verify_design": True,    # rasterizar .svg y criticarlo con visión (vector iterativo)

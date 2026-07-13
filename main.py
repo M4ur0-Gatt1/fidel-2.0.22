@@ -41,7 +41,7 @@ ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-LOW_VERSION = "3.10.0"
+LOW_VERSION = "3.10.1"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -3077,6 +3077,13 @@ class Api:
                                             "glm-5.2, kimi-k2.6, llama-4-maverick, qwen3-coder-flash "
                                             "u openai-gpt-oss-120b.",
                                     "status": "Error"}
+                        if "429" in err or "rate limit" in low:
+                            return {"text": "⏳ Límite de requests por minuto alcanzado (429) en "
+                                            "todos los proveedores disponibles. Esperá ~1 minuto y "
+                                            "seguí, o cargá otra API key en ⚙ para repartir la carga. "
+                                            "Tip: en tareas grandes conviene un tier más alto o menos "
+                                            "verificaciones (⚙ → agente).",
+                                    "status": "Rate limit"}
                         raise
                     # el usuario detuvo (o el stream se cortó sin respuesta)
                     if s._cancel or r is None:
