@@ -55,12 +55,12 @@ DEFAULT_CONFIG = {
         "qwen": {"api_key": "", "model": "qwen-plus", "base_url": ""},
         "glm": {"api_key": "", "model": "glm-4", "base_url": ""},
         "xai": {"api_key": "", "model": "grok-2", "base_url": ""},
-        # Digital Ocean (Paperspace) — modelos open-source via API compatible OpenAI.
-        # Key: https://cloud.digitalocean.com/account/api/tokens  (DO token)
-        #      o https://console.paperspace.io/settings/apikeys (PS key)
-        # Endpoint por defecto: https://api.paperspace.io/v1
-        # Si usás Digital Ocean directamente: https://gateway.digitalocean.ai/v1
-        "digitalocean": {"api_key": "", "model": "llama-3.3-70b-instruct", "base_url": "https://api.paperspace.io/v1"},
+        # DigitalOcean GenAI Platform — Serverless Inference (compatible OpenAI).
+        # Endpoint: https://inference.do-ai.run/v1  → da acceso a TODOS los modelos
+        # con los que tengas acceso (Llama, DeepSeek, Mistral, OpenAI, Anthropic).
+        # Key: token personal de DO o model access key
+        #      (https://cloud.digitalocean.com/gen-ai/model-access-keys)
+        "digitalocean": {"api_key": "", "model": "llama3.3-70b-instruct", "base_url": "https://inference.do-ai.run/v1"},
         # LTX (Lightricks) — SOLO video (text→video / imagen→video con audio).
         # No es un modelo de chat: no entra en la cadena de failover del agente.
         # Key: https://console.ltx.video/api-keys
@@ -85,8 +85,35 @@ class Config:
             # ocultar providers agregados después en DEFAULT_CONFIG
             merged["providers"] = {**DEFAULT_CONFIG["providers"],
                                    **data.get("providers", {})}
+            if self._migrate(merged):
+                try:
+                    with open(self.path, "w", encoding="utf-8") as f:
+                        json.dump(merged, f, indent=2)
+                except OSError:
+                    pass
             return merged
         return DEFAULT_CONFIG.copy()
+
+    # endpoints viejos que quedaron guardados en config.json y hay que corregir
+    _OBSOLETE_BASE_URLS = {
+        "digitalocean": ({"https://api.paperspace.io/v1",
+                          "https://gateway.digitalocean.ai/v1",
+                          "https://api.paperspace.io", ""},
+                         "https://inference.do-ai.run/v1"),
+    }
+
+    def _migrate(self, cfg: dict) -> bool:
+        """Corrige config.json ya guardados: reemplaza base_urls obsoletos por el
+        vigente (p.ej. DigitalOcean pasó de paperspace a inference.do-ai.run — con
+        el viejo solo se veían algunos modelos). Devuelve True si cambió algo."""
+        changed = False
+        provs = cfg.get("providers", {})
+        for name, (olds, new) in self._OBSOLETE_BASE_URLS.items():
+            p = provs.get(name)
+            if p is not None and p.get("base_url", "") in olds:
+                p["base_url"] = new
+                changed = True
+        return changed
 
     def save(self):
         with open(self.path, "w", encoding="utf-8") as f:

@@ -35,7 +35,8 @@ jobs:
         shell: pwsh
         run: |
           choco install innosetup -y --no-progress
-          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" low_installer.iss
+          $ver = "$env:GITHUB_REF_NAME" -replace '^v',''
+          & "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe" "/DAppVersion=$ver" low_installer.iss
       - name: Subir al release
         shell: bash
         run: gh release upload "$GITHUB_REF_NAME" Output/*.exe dist/LOW.exe --clobber

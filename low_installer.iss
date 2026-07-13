@@ -2,7 +2,12 @@
 ; Compilar: ISCC.exe low_installer.iss
 
 #define AppName "LOW"
-#define AppVersion "3.4.0"
+; La versión se puede pasar por línea de comandos: ISCC /DAppVersion=3.5.0
+; (el workflow la deriva del tag). El default acá es solo para builds manuales
+; y debe coincidir con LOW_VERSION en main.py.
+#ifndef AppVersion
+  #define AppVersion "3.5.1"
+#endif
 #define AppExe "LOW.exe"
 
 [Setup]
