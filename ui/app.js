@@ -63,7 +63,6 @@ window.addEventListener("unhandledrejection", e =>
 window.LOW = {
   onPy(m) {
     try {
-      if (m.event === "tool") toolStep(m.data.name, m.data.res);
       if (m.event === "propose") propose(m.data.code);
       if (m.event === "status") setStatus(m.data);
       if (m.event === "sys") { sysMsg(m.data); persist("system", m.data); }
@@ -95,17 +94,15 @@ window.LOW = {
         else if (toolName === "list_files") toolDesc = "📁 Listando archivos";
         else if (toolName === "search_code") toolDesc = "🔍 Buscando código";
         else if (toolName === "generate_image") toolDesc = "🖼 Generando imagen";
+        else if (toolName === "ask_model") toolDesc = "🤝 Consultando otro modelo";
+        else if (toolName === "web_search") toolDesc = "🌐 Buscando en la web";
+        else if (toolName === "git") toolDesc = "⎇ git";
         else toolDesc = `🔧 ${toolName}`;
         setStatus(toolDesc);
-        // indicador persistente: siempre a la vista donde está trabajando ahora
-        setWorkingOn(fileName || toolDesc.replace(/^\S+\s*/, ""));
-        // Mostrar mensaje temporal con detalles
-        let msgText = toolDesc;
-        if (toolRes && toolRes.length > 0) {
-          msgText += `: ${toolRes.substring(0, 100)}${toolRes.length > 100 ? '...' : ''}`;
-        }
-        const tempMsg = sysMsg(msgText);
-        setTimeout(() => tempMsg.remove(), 3000);
+        // indicador persistente (heartbeat) + paso en la tarjeta de actividad
+        // (persistente, ya no un mensaje que desaparece a los 3s)
+        setWorkingOn(fileName ? `${toolDesc} ${fileName}` : toolDesc);
+        toolStep(toolDesc, toolRes);
       }
     } catch (e) { reportErr("onPy(" + m.event + "): " + e.message); }
   },
@@ -1193,11 +1190,11 @@ function thinkMsg() {
 }
 
 /* tarjeta Plan: se crea con el primer tool call del turno */
-function toolStep(name, res) {
+function toolStep(desc, res) {
   if (!S.plan) {
     const card = document.createElement("div");
     card.className = "card";
-    card.innerHTML = '<div class="card-h">Plan <span class="n">ejecutando…</span>' +
+    card.innerHTML = '<div class="card-h">Actividad <span class="n">…</span>' +
       '<div class="prog"><div></div></div></div><div class="card-b"></div>';
     $("#msgs").appendChild(card);
     S.plan = { card, steps: 0 };
@@ -1205,31 +1202,37 @@ function toolStep(name, res) {
   const body = S.plan.card.querySelector(".card-b");
   const d = document.createElement("div");
   d.className = "step";
-  const short = (res || "").split("\n")[0].slice(0, 60);
-  d.innerHTML = `<span class="ck">✓</span> <span class="fn"></span> <span></span>`;
-  d.children[1].textContent = name;
+  const short = (res || "").split("\n")[0].slice(0, 70);
+  const ok = !/^\s*❌/.test(res || "");
+  d.innerHTML = `<span class="ck"></span> <span class="fn"></span> <span></span>`;
+  const ck = d.querySelector(".ck");
+  ck.textContent = ok ? "✓" : "✗";
+  if (!ok) ck.style.color = "var(--red)";
+  d.children[1].textContent = desc;        // texto amigable (📖 Leyendo X, ✏️ …)
   d.children[2].textContent = short;
   body.appendChild(d);
   S.plan.steps++;
-  S.plan.card.querySelector(".prog > div").style.width = Math.min(100, S.plan.steps * 25) + "%";
+  S.plan.card.querySelector(".prog > div").style.width = Math.min(100, S.plan.steps * 12) + "%";
   scrollMsgs();
 }
 
 function planDone() {
   clearWorkingOn();
   if (!S.plan) return;
-  S.plan.card.querySelector(".card-h .n").textContent = `${S.plan.steps}/${S.plan.steps}`;
+  S.plan.card.querySelector(".card-h .n").textContent = `✓ ${S.plan.steps} paso${S.plan.steps === 1 ? "" : "s"}`;
   S.plan.card.querySelector(".prog > div").style.width = "100%";
   S.plan = null;
 }
 
-/* indicador en vivo de en qué archivo/acción está el agente ahora mismo */
+/* indicador en vivo de en qué archivo/acción está el agente ahora mismo.
+   El texto lo pinta el heartbeat (elapsed + esta acción); acá solo lo guardamos. */
 function setWorkingOn(text) {
+  S.lastAction = text;
   const el = $("#workingOn");
-  el.textContent = text;
-  el.hidden = false;
+  if (el && S.busy) el.hidden = false;
 }
 function clearWorkingOn() {
+  S.lastAction = "";
   const el = $("#workingOn");
   el.hidden = true;
   el.textContent = "";
@@ -1282,6 +1285,32 @@ function setBusy(b) {
   const btn = $("#btnSend");
   btn.innerHTML = icoUse(b ? "i-stop" : "i-arrow");
   btn.title = b ? "Detener" : "Enviar";
+  if (b) startHeartbeat(); else stopHeartbeat();
+}
+
+/* ── heartbeat: latido en vivo durante TODO el turno, para que nunca parezca
+   colgado (aunque el modelo esté pensando en silencio entre tool-calls) ── */
+function startHeartbeat() {
+  S.turnStart = Date.now(); S.lastAction = "";
+  clearInterval(S.hbTimer);
+  const tick = () => {
+    const s = Math.round((Date.now() - S.turnStart) / 1000);
+    const el = $("#workingOn");
+    if (el) {
+      el.hidden = false;
+      el.textContent = `⏳ Trabajando ${s}s` + (S.lastAction ? " · " + S.lastAction : "…");
+    }
+    if (S.plan) {
+      const n = S.plan.card.querySelector(".card-h .n");
+      if (n) n.textContent = `${S.plan.steps} paso${S.plan.steps === 1 ? "" : "s"} · ${s}s`;
+    }
+  };
+  tick();
+  S.hbTimer = setInterval(tick, 1000);
+}
+function stopHeartbeat() {
+  clearInterval(S.hbTimer); S.hbTimer = null;
+  const el = $("#workingOn"); if (el) { el.hidden = true; el.textContent = ""; }
 }
 function cancelRequest() {
   api.cancel();
