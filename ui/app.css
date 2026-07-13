@@ -890,6 +890,17 @@ footer {
   background: var(--panel2); color: var(--mut); text-align: center;
   line-height: 18px; font-size: 14px; font-weight: 600;
 }
+.dz-sw-pro {
+  background: var(--panel2); color: var(--green); text-align: center;
+  line-height: 18px; font-size: 12px;
+}
+/* paletas profesionales (modal) */
+.dz-prow { display: flex; flex-wrap: wrap; gap: 5px; margin-bottom: 4px; }
+.dz-psw {
+  width: 24px; height: 24px; border-radius: 5px; border: 1px solid var(--line);
+  cursor: pointer; box-shadow: inset 0 0 0 1px rgba(255,255,255,.08);
+}
+.dz-psw:hover { transform: scale(1.15); }
 .tl-frames { display: flex; gap: 5px; overflow-x: auto; flex: 1; min-width: 0; }
 .tl-frame {
   flex: none; width: 52px; height: 44px; display: flex; align-items: center;

@@ -80,6 +80,7 @@ DEFAULT_CONFIG = {
                 "model": "bytedance/seedance-2.0/text-to-video",
                 "i2v_model": "bytedance/seedance-2.0/image-to-video",
                 "image_model": "fal-ai/flux/schnell",
+                "colorize_model": "fal-ai/flux-kontext/dev",
                 "base_url": ""},
     }
 }

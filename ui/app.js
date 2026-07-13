@@ -498,6 +498,8 @@ function bind() {
   $("#dzRotate").addEventListener("mousedown", dzRotateDown);
   $("#dzGroup").onclick = (e) => dzGroupSel(e.shiftKey);
   $("#dzImg").onclick = dzImportImage;
+  $("#dzColor").onclick = dzColorize;
+  $("#dzBg").onclick = dzGenBg;
   $("#dzProps").addEventListener("focusin", () => dzSnapshot());
   $("#dzCanvas").addEventListener("pointerdown", dzDrawDown);
   $("#dzCanvas").addEventListener("pointermove", dzDrawMove);
@@ -2391,6 +2393,159 @@ async function dzImportImage() {
   dzSetStatus("📷 " + (r.name || "imagen") + " importada al 50% de opacidad para calcar — subile la opacidad en el panel si la querés sólida");
 }
 
+/* ── rasterizado (Promise sobre window.rasterizeSVG que usa __raster) ── */
+function dzRasterize(svgText, maxPx) {
+  return new Promise((resolve, reject) => {
+    try { window.rasterizeSVG(svgText, maxPx || 1024); } catch (e) { return reject(e); }
+    let n = 0;
+    const t = setInterval(() => {
+      const r = window.__raster;
+      if (r && r !== "PENDING") {
+        clearInterval(t);
+        if (typeof r === "string" && r.startsWith("data:image")) resolve(r);
+        else reject(new Error(typeof r === "string" ? r.replace(/^ERR:/, "") : "raster falló"));
+      } else if (++n > 100) { clearInterval(t); reject(new Error("timeout rasterizando")); }
+    }, 80);
+  });
+}
+
+/* ── modal simple para pedir un texto dentro del estudio de diseño ── */
+function dzPromptModal(title, ph, def) {
+  return new Promise(resolve => {
+    openModal(`<h2>${title}</h2>
+      <textarea id="dzPrIn" class="cmp-field" rows="3" spellcheck="false" placeholder="${(ph || "").replace(/"/g, "&quot;")}">${def || ""}</textarea>
+      <div class="m-actions"><button class="ghost" id="dzPrX">Cancelar</button>
+      <button class="primary" id="dzPrOk">Aceptar</button></div>`);
+    setTimeout(() => { const i = $("#dzPrIn"); if (i) i.focus(); }, 30);
+    $("#dzPrX").onclick = () => { closeModal(); resolve(null); };
+    $("#dzPrOk").onclick = () => { const v = $("#dzPrIn").value.trim(); closeModal(); resolve(v); };
+  });
+}
+
+/* ── generar FONDO con IA y mandarlo al fondo del eje z ── */
+async function dzGenBg() {
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (!svg) return dzSetStatus("Abrí o creá un diseño primero");
+  const prompt = await dzPromptModal("Generar fondo con IA",
+    "describí el fondo (ej: cielo al atardecer con nubes suaves, estilo acuarela)");
+  if (!prompt) return;
+  dzSetStatus("🖼 Generando fondo con IA…");
+  const r = await api.gen_background(prompt, "1024x1024");
+  if (!r || r.error) return dzSetStatus("❌ " + ((r && r.error) || "no se pudo generar el fondo"));
+  dzSnapshot();
+  const vb = (svg.getAttribute("viewBox") || "0 0 1080 1080").split(/\s+/).map(Number);
+  const el = document.createElementNS(SVGNS, "image");
+  el.setAttribute("href", r.data);
+  el.setAttribute("x", vb[0]); el.setAttribute("y", vb[1]);
+  el.setAttribute("width", vb[2]); el.setAttribute("height", vb[3]);
+  el.setAttribute("preserveAspectRatio", "xMidYMid slice");
+  el.setAttribute("data-bg", "1");
+  svg.insertBefore(el, svg.firstChild);        // AL FONDO del eje z (detrás de todo)
+  dzMarkDirty(); dzBuildLayers();
+  dzSetStatus("🖼 Fondo generado y enviado al fondo del lienzo (eje z)" +
+              (r.used ? " · " + r.used : ""));
+}
+
+/* ── coloreado inteligente / entintado con IA (FLUX Kontext / SiliconFlow) ── */
+async function dzColorize() {
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (!svg) return dzSetStatus("Abrí o creá un diseño primero");
+  const style = await dzPromptModal("Coloreado inteligente (IA)",
+    "estilo/paleta (opcional): ej 'colores planos estilo anime, piel cálida, sombreado suave'", "");
+  if (style === null) return;
+  dzSetStatus("🎨 Rasterizando el lienzo…");
+  let png;
+  try { png = await dzRasterize(svg.outerHTML, 1280); }
+  catch (e) { return dzSetStatus("❌ No pude rasterizar el lienzo: " + (e.message || e)); }
+  dzSetStatus("🎨 Coloreando con IA… (puede tardar)");
+  const r = await api.ai_colorize(png, style);
+  if (!r || r.error) return dzSetStatus("❌ " + ((r && r.error) || "no se pudo colorear"));
+  dzSnapshot();
+  const vb = (svg.getAttribute("viewBox") || "0 0 1080 1080").split(/\s+/).map(Number);
+  const el = document.createElementNS(SVGNS, "image");
+  el.setAttribute("href", r.data);
+  el.setAttribute("x", vb[0]); el.setAttribute("y", vb[1]);
+  el.setAttribute("width", vb[2]); el.setAttribute("height", vb[3]);
+  el.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  el.setAttribute("data-colorized", "1");
+  svg.appendChild(el);                          // capa nueva arriba (comparás/ajustás)
+  dzSelect(el); dzMarkDirty(); dzBuildLayers();
+  dzSetStatus("🎨 Coloreado con " + (r.used || "IA") +
+              " — quedó como capa nueva arriba (movéla, bajale opacidad o borrala)");
+}
+
+/* ── paletas profesionales + armonías de color ── */
+const DZ_PAL_PRESETS = {
+  "Piel (skin tones)": ["#3B2219", "#6E4B3A", "#9C6B4E", "#C68A63", "#E3B18C", "#F3D3B5", "#FBE8D3"],
+  "Flat UI": ["#1ABC9C", "#2ECC71", "#3498DB", "#9B59B6", "#34495E", "#F1C40F", "#E67E22", "#E74C3C"],
+  "Pastel": ["#FFB5B5", "#FFD8A8", "#FFF3B0", "#C8E7C8", "#B5D8EB", "#D3C0EB", "#F5D0E8"],
+  "Material": ["#F44336", "#E91E63", "#9C27B0", "#3F51B5", "#2196F3", "#009688", "#4CAF50", "#FFC107", "#FF9800"],
+  "Cine (teal/orange)": ["#0B1A2A", "#123A4B", "#1E6F76", "#2AA198", "#E8A15A", "#D9722B", "#8C3B18"],
+  "Tierra (earth)": ["#2E2A20", "#5B4636", "#8A6E4B", "#B49266", "#7A8B5A", "#4E6151", "#C9B79C"],
+  "Neón": ["#0D0221", "#FF2A6D", "#FF6AC1", "#05D9E8", "#39FF14", "#F9F871", "#B967FF"],
+  "Escala de grises": ["#111111", "#333333", "#555555", "#777777", "#999999", "#BBBBBB", "#DDDDDD", "#FFFFFF"],
+};
+function dzHexToHsl(hex) {
+  const m = /^#?([\da-f]{2})([\da-f]{2})([\da-f]{2})$/i.exec(hex || "");
+  if (!m) return null;
+  let r = parseInt(m[1], 16) / 255, g = parseInt(m[2], 16) / 255, b = parseInt(m[3], 16) / 255;
+  const mx = Math.max(r, g, b), mn = Math.min(r, g, b); let h = 0, s = 0, l = (mx + mn) / 2;
+  if (mx !== mn) {
+    const d = mx - mn; s = l > 0.5 ? d / (2 - mx - mn) : d / (mx + mn);
+    h = mx === r ? (g - b) / d + (g < b ? 6 : 0) : mx === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    h *= 60;
+  }
+  return [h, s, l];
+}
+function dzHslToHex(h, s, l) {
+  h = ((h % 360) + 360) % 360; s = Math.max(0, Math.min(1, s)); l = Math.max(0, Math.min(1, l));
+  const c = (1 - Math.abs(2 * l - 1)) * s, x = c * (1 - Math.abs((h / 60) % 2 - 1)), m = l - c / 2;
+  let r = 0, g = 0, b = 0;
+  if (h < 60) [r, g, b] = [c, x, 0]; else if (h < 120) [r, g, b] = [x, c, 0];
+  else if (h < 180) [r, g, b] = [0, c, x]; else if (h < 240) [r, g, b] = [0, x, c];
+  else if (h < 300) [r, g, b] = [x, 0, c]; else [r, g, b] = [c, 0, x];
+  const H = v => Math.round((v + m) * 255).toString(16).padStart(2, "0");
+  return "#" + H(r) + H(g) + H(b);
+}
+function dzHarmonies(hex) {
+  const hsl = dzHexToHsl(hex); if (!hsl) return [];
+  const [h, s, l] = hsl;
+  return [
+    hex,
+    dzHslToHex(h + 180, s, l),                        // complementario
+    dzHslToHex(h + 30, s, l), dzHslToHex(h - 30, s, l), // análogos
+    dzHslToHex(h + 120, s, l), dzHslToHex(h + 240, s, l), // tríada
+    dzHslToHex(h, s, Math.min(0.92, l + 0.18)),        // tinte
+    dzHslToHex(h, s, Math.max(0.08, l - 0.18)),        // sombra
+  ];
+}
+function dzSwatchRow(colors) {
+  return '<div class="dz-prow">' + colors.map(c =>
+    `<span class="dz-psw" data-c="${c}" style="background:${c}" title="${c}"></span>`).join("") + "</div>";
+}
+function dzPalettePro() {
+  const cur = ($("#dzPFill") && $("#dzPFill").value) || "#E5322D";
+  let html = `<h2>Paletas profesionales</h2>
+    <div class="sub">Clic en un color = agregarlo a la paleta del proyecto (y aplicarlo al relleno).</div>
+    <h3 style="margin:10px 0 4px;font-size:12px">Armonías de tu relleno (${cur})</h3>
+    ${dzSwatchRow(dzHarmonies(cur))}`;
+  for (const [name, cols] of Object.entries(DZ_PAL_PRESETS)) {
+    html += `<h3 style="margin:10px 0 4px;font-size:12px">${name}</h3>${dzSwatchRow(cols)}`;
+  }
+  html += `<div class="m-actions"><button class="ghost" id="dzPalX">Cerrar</button></div>`;
+  openModal(html);
+  document.querySelectorAll("#modal .dz-psw").forEach(sw => {
+    sw.onclick = () => {
+      const c = sw.dataset.c;
+      const pal = dzPaletteLoad();
+      if (!pal.includes(c)) { pal.push(c); dzPaletteSave(pal); dzPaletteRender(); }
+      DZ.fillColor = c; if ($("#dzPFill")) $("#dzPFill").value = c;
+      dzStyleApply("fill", c);
+    };
+  });
+  $("#dzPalX").onclick = closeModal;
+}
+
 /* ══ panel de estilo (relleno/trazo/grosor/opacidad) + paleta del proyecto ══ */
 function dzStyleApply(attr, val) {
   const pack = (DZ.multi || []).length > 1 ? DZ.multi : (DZ.sel ? [DZ.sel] : []);
@@ -2446,6 +2601,12 @@ function dzPaletteRender() {
     if (!pal.includes(c)) { pal.push(c); dzPaletteSave(pal); dzPaletteRender(); }
   };
   box.appendChild(add);
+  // acceso a paletas profesionales + armonías de color
+  const pro = document.createElement("span");
+  pro.className = "dz-sw dz-sw-pro"; pro.textContent = "★";
+  pro.title = "Paletas profesionales y armonías de color";
+  pro.onclick = dzPalettePro;
+  box.appendChild(pro);
 }
 function dzMarkDirty() { DZ.dirty = true; }
 

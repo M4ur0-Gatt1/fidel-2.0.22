@@ -41,7 +41,7 @@ ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-LOW_VERSION = "3.9.0"
+LOW_VERSION = "3.10.0"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -857,6 +857,55 @@ class Api:
             return {"error": "imagen muy pesada (>12MB) — achicala antes"}
         return {"data": f"data:{mime};base64," + base64.b64encode(raw).decode("ascii"),
                 "name": fp.name}
+
+    def gen_background(s, prompt, size="1024x1024"):
+        """Genera una IMAGEN DE FONDO con IA y la devuelve como data URL, para que
+        el frontend la coloque AL FONDO del lienzo (eje z). Usa el mismo despachador
+        de imagen (fal.ai/OpenAI/SiliconFlow)."""
+        if not (prompt or "").strip():
+            return {"error": "falta describir el fondo"}
+        data, used, err = s._gen_image(prompt.strip(), size=size)
+        if not data:
+            return {"error": err or "no se pudo generar el fondo"}
+        return {"data": "data:image/png;base64," + base64.b64encode(data).decode("ascii"),
+                "used": used}
+
+    def ai_colorize(s, image, prompt=""):
+        """Coloreado inteligente / entintado con IA: toma un raster (line art o el
+        render del lienzo, como data URL) y lo colorea preservando las líneas. Usa
+        FLUX.1 Kontext en fal.ai (lo mejor del mercado para line art) y si no hay,
+        edición de imagen en SiliconFlow. Devuelve {data: dataurl}."""
+        if not image or not str(image).startswith("data:"):
+            return {"error": "falta la imagen a colorear (data URL)"}
+        instr = (prompt or "").strip() or (
+            "Colorize this line art professionally: clean flat colors with soft "
+            "cel-shading, harmonious palette, keep the existing ink lines intact, "
+            "do not change the drawing — only add color.")
+        # fal.ai FLUX Kontext primero (referencia del mercado en line art)
+        if s.cfg.get_api_key("fal"):
+            model = s._fal_cfg("colorize_model", "fal-ai/flux-kontext/dev")
+            data, err = s._fal_run(model, {"prompt": instr, "image_url": image}, "image")
+            if data:
+                return {"data": "data:image/png;base64," + base64.b64encode(data).decode("ascii"),
+                        "used": "fal.ai FLUX Kontext"}
+            fal_err = err
+        else:
+            fal_err = None
+        # SiliconFlow (Qwen-Image-Edit) como alternativa
+        if s.cfg.get_api_key("siliconflow"):
+            try:
+                import tempfile
+                b64 = image.split(",", 1)[1]
+                tmp = Path(tempfile.gettempdir()) / "low_colorize_in.png"
+                tmp.write_bytes(base64.b64decode(b64))
+            except (ValueError, OSError, base64.binascii.Error) as e:
+                return {"error": f"imagen inválida: {e}"}
+            data, err = s._edit_image_api(str(tmp), instr)
+            if data:
+                return {"data": "data:image/png;base64," + base64.b64encode(data).decode("ascii"),
+                        "used": "SiliconFlow (Qwen-Image-Edit)"}
+            return {"error": err or fal_err or "no se pudo colorear"}
+        return {"error": fal_err or "cargá una API key de fal.ai o SiliconFlow (⚙) para el coloreado con IA"}
 
     # ── escena de animación: cámara, claves y easing por secuencia ──────
     # Vive en <base>_escena.json al lado de los cuadros (portable con el proyecto).
