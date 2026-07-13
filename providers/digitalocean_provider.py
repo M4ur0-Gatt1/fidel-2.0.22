@@ -14,14 +14,16 @@ from providers.base import OpenAICompatProvider
 
 class DigitalOceanProvider(OpenAICompatProvider):
     BASE_URL = "https://inference.do-ai.run/v1"
-    # fallback si /models no responde; la lista real (todos los modelos con
-    # acceso) se trae en vivo de /models
-    MODELS = ["llama3.3-70b-instruct", "llama3-8b-instruct",
-              "deepseek-r1-distill-llama-70b", "mistral-nemo-instruct-2407",
-              "openai-gpt-4o", "anthropic-claude-3.5-sonnet"]
+    # fallback si /models no responde; la lista REAL (todos los modelos a los que
+    # tenés acceso) se trae en vivo de /models. OJO con el formato de los IDs de
+    # DO: 'openai-gpt-4o-mini', 'llama3-8b-instruct' (confirmados en la doc), NO
+    # 'llama3.3-70b-instruct' con puntos → eso da 403 "not available".
+    MODELS = ["openai-gpt-4o-mini", "openai-gpt-4o", "llama3-8b-instruct",
+              "llama3.3-70b-instruct", "anthropic-claude-3.5-sonnet",
+              "deepseek-r1-distill-llama-70b"]
 
     @staticmethod
     def provider_name(): return "DigitalOcean"
 
     @staticmethod
-    def default_model(): return "llama3.3-70b-instruct"
+    def default_model(): return "openai-gpt-4o-mini"

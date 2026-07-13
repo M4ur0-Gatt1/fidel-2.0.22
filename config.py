@@ -60,7 +60,7 @@ DEFAULT_CONFIG = {
         # con los que tengas acceso (Llama, DeepSeek, Mistral, OpenAI, Anthropic).
         # Key: token personal de DO o model access key
         #      (https://cloud.digitalocean.com/gen-ai/model-access-keys)
-        "digitalocean": {"api_key": "", "model": "llama3.3-70b-instruct", "base_url": "https://inference.do-ai.run/v1"},
+        "digitalocean": {"api_key": "", "model": "openai-gpt-4o-mini", "base_url": "https://inference.do-ai.run/v1"},
         # LTX (Lightricks) — SOLO video (text→video / imagen→video con audio).
         # No es un modelo de chat: no entra en la cadena de failover del agente.
         # Key: https://console.ltx.video/api-keys
@@ -101,17 +101,29 @@ class Config:
                           "https://api.paperspace.io", ""},
                          "https://inference.do-ai.run/v1"),
     }
+    # IDs de modelo inválidos que pusimos como default y daban 403 en DO
+    # (formato con puntos). Se reescriben a un ID válido de DO.
+    _OBSOLETE_MODELS = {
+        "digitalocean": ({"llama3.3-70b-instruct", "llama-3.3-70b-instruct",
+                          "llama-3.1-8b-instruct", "mixtral-8x7b-instruct"},
+                         "openai-gpt-4o-mini"),
+    }
 
     def _migrate(self, cfg: dict) -> bool:
-        """Corrige config.json ya guardados: reemplaza base_urls obsoletos por el
-        vigente (p.ej. DigitalOcean pasó de paperspace a inference.do-ai.run — con
-        el viejo solo se veían algunos modelos). Devuelve True si cambió algo."""
+        """Corrige config.json ya guardados: base_urls y IDs de modelo obsoletos
+        (p.ej. DigitalOcean pasó de paperspace a inference.do-ai.run, y sus IDs de
+        modelo no llevan puntos). Devuelve True si cambió algo."""
         changed = False
         provs = cfg.get("providers", {})
         for name, (olds, new) in self._OBSOLETE_BASE_URLS.items():
             p = provs.get(name)
             if p is not None and p.get("base_url", "") in olds:
                 p["base_url"] = new
+                changed = True
+        for name, (olds, new) in self._OBSOLETE_MODELS.items():
+            p = provs.get(name)
+            if p is not None and p.get("model", "") in olds:
+                p["model"] = new
                 changed = True
         return changed
 
