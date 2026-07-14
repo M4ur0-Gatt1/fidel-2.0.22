@@ -2707,6 +2707,7 @@ const DZ_CURSORS = { select: "", direct: "default", nodes: "default", eraser: "c
                      dropper: "copy", bucket: "pointer", hand: "grab",
                      pivot: "crosshair" };
 function dzSetTool(t) {
+  if (DRAW && DRAW._pending) dzFinalizeStroke();       // cerrá cualquier trazo pendiente
   DZ.tool = t;
   document.querySelectorAll(".dz-toolbtn").forEach(b =>
     b.classList.toggle("active", b.dataset.tool === t));
@@ -2744,14 +2745,31 @@ function dzDrawDown(e) {
   if (tool === "eraser") { dzEraseStart(e); return; }
   const p = dzToUser(e.clientX, e.clientY);
   if (DZ.tool === "pen") { dzPenDown(p); return; }
+  const vb = (svg.getAttribute("viewBox") || "0 0 1080 1080").split(/\s+/).map(Number);
+  const dim = Math.max(vb[2] || 1080, vb[3] || 1080);
+  const jump = dim * 0.55;
+  // STITCHING (clave para la Huion): en modo Windows Ink el lápiz emite un
+  // up/down por cada muestra → sin esto cada tramo sería un trazo cortado.
+  // Si hay un trazo recién soltado (esperando finalizar), del mismo tipo y
+  // CERCA de donde se soltó, lo CONTINÚO en vez de empezar otro.
+  if (DRAW && DRAW._pending && DRAW.mode === DZ.tool) {
+    const last = DRAW.pts[DRAW.pts.length - 1];
+    const near = (p.x - last[0]) ** 2 + (p.y - last[1]) ** 2 < (dim * 0.12) ** 2;
+    if (near) {
+      clearTimeout(DRAW._pending); DRAW._pending = null;
+      DRAW.pid = e.pointerId;
+      DRAW.pts.push([p.x, p.y, e.pressure || 0.5]);   // conectar el tramo
+      try { $("#dzCanvas").setPointerCapture(e.pointerId); } catch (err) { /* */ }
+      return;
+    }
+    dzFinalizeStroke();                                // arranca lejos → cerrá el anterior
+  }
   dzSnapshot();                                        // Ctrl+Z deshace el trazo
   // tope de salto: un punto que salte más que ~55% del lienzo en una sola
   // muestra es un glitch de la tableta (hover/2º contacto/Windows Ink), no un
   // trazo real → se descarta. Guardo el pointerId para ignorar otros punteros.
-  const vb = (svg.getAttribute("viewBox") || "0 0 1080 1080").split(/\s+/).map(Number);
-  const jump = Math.max(vb[2] || 1080, vb[3] || 1080) * 0.55;
   DRAW = { pts: [[p.x, p.y, e.pressure || 0.5]], mode: DZ.tool, el: null,
-           pid: e.pointerId, maxJump2: jump * jump };
+           pid: e.pointerId, maxJump2: jump * jump, _pending: null };
   if (DZ.tool === "pencil") {
     DRAW.el = document.createElementNS(SVGNS, "path");
     DRAW.el.setAttribute("fill", "none");
@@ -2773,6 +2791,9 @@ function dzDrawMove(e) {
   if (PEN && PEN.dragging) { dzPenDrag(dzToUser(e.clientX, e.clientY)); return; }
   if (PEN && !DRAW) { dzPenHover(dzToUser(e.clientX, e.clientY)); return; }
   if (!DRAW) return;
+  // trazo en pausa que se reanuda por movimiento (el lápiz siguió sin nuevo down):
+  // adoptá su pointer y cancelá la finalización pendiente → línea continua
+  if (DRAW._pending) { clearTimeout(DRAW._pending); DRAW._pending = null; DRAW.pid = e.pointerId; }
   if (e.pointerId !== DRAW.pid) return;                // ignorá OTROS punteros (palma/2º dedo/hover)
   e.preventDefault();
   // eventos coalescidos: la tableta muestrea a 100-250Hz pero el navegador
@@ -2800,27 +2821,33 @@ function dzDrawMove(e) {
 function dzDrawUp(e) {
   if (PEN && PEN.dragging) { dzPenUp(); return; }
   if (!DRAW) return;
-  // solo cierra el pointer que lo inició (evita que un 2º contacto lo corte)
-  if (e && e.pointerId != null && e.pointerId !== DRAW.pid && e.type !== "pointercancel") return;
+  // solo reacciona al pointer que lo inició (un 2º contacto no lo corta)
+  if (e && e.pointerId != null && e.pointerId !== DRAW.pid
+      && e.type !== "pointercancel" && e.type !== "lostpointercapture") return;
   try { $("#dzCanvas").releasePointerCapture(DRAW.pid); } catch (err) { /* */ }
-  if (DRAW.pts.length < 2) {
-    DRAW.el.remove();                                  // clic suelto: nada que dejar
-    DRAW = null;
-    return;
-  }
-  // post-procesado profesional: el preview crudo se reemplaza por la curva
-  // refinada (media móvil + simplificación + bezier) — como OpenToonz
-  const pts = dzRefineStroke(DRAW.pts);
-  let finalEl = DRAW.el;
-  if (DRAW.mode === "pencil") {
-    DRAW.el.setAttribute("d", dzSmoothPath(pts));
+  // NO finalizar al toque: la Huion fragmenta con up/down rápidos. Espero
+  // ~140ms; si el lápiz vuelve (down cerca o move) se REANUDA el mismo trazo.
+  if (DRAW._pending) clearTimeout(DRAW._pending);
+  DRAW._pending = setTimeout(dzFinalizeStroke, 140);
+}
+/* finaliza de verdad el trazo: post-procesado (media móvil + simplificación +
+   bezier), pincel → cinta de ancho variable, espejo. Se llama recién cuando el
+   trazo estuvo ~140ms sin reanudarse. */
+function dzFinalizeStroke() {
+  if (!DRAW) return;
+  if (DRAW._pending) { clearTimeout(DRAW._pending); DRAW._pending = null; }
+  const d = DRAW; DRAW = null;                          // tomar y limpiar (evita reentradas)
+  if (d.pts.length < 2) { if (d.el) d.el.remove(); return; }
+  const pts = dzRefineStroke(d.pts);
+  let finalEl = d.el;
+  if (d.mode === "pencil") {
+    d.el.setAttribute("d", dzSmoothPath(pts));
   } else {
     const ribbon = dzBrushRibbon(pts, DZ.drawW || 6, DZ.drawColor || "#F0450E");
-    if (ribbon) { DRAW.el.replaceWith(ribbon); finalEl = ribbon; }
-    else { DRAW.el.remove(); finalEl = null; }
+    if (ribbon) { d.el.replaceWith(ribbon); finalEl = ribbon; }
+    else { d.el.remove(); finalEl = null; }
   }
   if (finalEl) dzMirrorClone(finalEl);                 // 🪞 modo espejo
-  DRAW = null;
   dzMarkDirty(); dzBuildLayers();
 }
 /* ══ post-procesado del trazo (como OpenToonz al soltar el lápiz):
