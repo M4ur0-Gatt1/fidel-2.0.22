@@ -503,6 +503,9 @@ function bind() {
   $("#dzCanvas").addEventListener("pointerdown", dzDrawDown);
   $("#dzCanvas").addEventListener("pointermove", dzDrawMove);
   $("#dzCanvas").addEventListener("pointerup", dzDrawUp);
+  // el lápiz saliendo de rango / pointer cancelado no debe dejar el trazo colgado
+  $("#dzCanvas").addEventListener("pointercancel", dzDrawUp);
+  $("#dzCanvas").addEventListener("lostpointercapture", (e) => { if (DRAW && e.pointerId === DRAW.pid) dzDrawUp(e); });
   $("#dzCanvas").addEventListener("dblclick", (e) => {
     if (PEN) { dzPenFinish(false); return; }
     // flecha negra: doble clic ENTRA al grupo (selección profunda, como Animate)
@@ -2742,7 +2745,13 @@ function dzDrawDown(e) {
   const p = dzToUser(e.clientX, e.clientY);
   if (DZ.tool === "pen") { dzPenDown(p); return; }
   dzSnapshot();                                        // Ctrl+Z deshace el trazo
-  DRAW = { pts: [[p.x, p.y, e.pressure || 0.5]], mode: DZ.tool, el: null };
+  // tope de salto: un punto que salte más que ~55% del lienzo en una sola
+  // muestra es un glitch de la tableta (hover/2º contacto/Windows Ink), no un
+  // trazo real → se descarta. Guardo el pointerId para ignorar otros punteros.
+  const vb = (svg.getAttribute("viewBox") || "0 0 1080 1080").split(/\s+/).map(Number);
+  const jump = Math.max(vb[2] || 1080, vb[3] || 1080) * 0.55;
+  DRAW = { pts: [[p.x, p.y, e.pressure || 0.5]], mode: DZ.tool, el: null,
+           pid: e.pointerId, maxJump2: jump * jump };
   if (DZ.tool === "pencil") {
     DRAW.el = document.createElementNS(SVGNS, "path");
     DRAW.el.setAttribute("fill", "none");
@@ -2764,6 +2773,7 @@ function dzDrawMove(e) {
   if (PEN && PEN.dragging) { dzPenDrag(dzToUser(e.clientX, e.clientY)); return; }
   if (PEN && !DRAW) { dzPenHover(dzToUser(e.clientX, e.clientY)); return; }
   if (!DRAW) return;
+  if (e.pointerId !== DRAW.pid) return;                // ignorá OTROS punteros (palma/2º dedo/hover)
   e.preventDefault();
   // eventos coalescidos: la tableta muestrea a 100-250Hz pero el navegador
   // agrupa — sin esto las curvas rápidas salen poligonales
@@ -2773,7 +2783,9 @@ function dzDrawMove(e) {
     const p = dzToUser(ev.clientX, ev.clientY);
     const last = DRAW.pts[DRAW.pts.length - 1];
     const dx = p.x - last[0], dy = p.y - last[1];
-    if (dx * dx + dy * dy < 1.2) continue;             // umbral fino anti-ruido
+    const d2 = dx * dx + dy * dy;
+    if (d2 < 1.2) continue;                            // umbral fino anti-ruido
+    if (d2 > DRAW.maxJump2) continue;                  // rechazo de spike (glitch de tableta)
     const pr = (ev.pointerType === "pen" && ev.pressure) ? ev.pressure : 0.5;
     DRAW.pts.push([p.x, p.y, pr]);
     if (DRAW.mode !== "pencil") {
@@ -2788,6 +2800,9 @@ function dzDrawMove(e) {
 function dzDrawUp(e) {
   if (PEN && PEN.dragging) { dzPenUp(); return; }
   if (!DRAW) return;
+  // solo cierra el pointer que lo inició (evita que un 2º contacto lo corte)
+  if (e && e.pointerId != null && e.pointerId !== DRAW.pid && e.type !== "pointercancel") return;
+  try { $("#dzCanvas").releasePointerCapture(DRAW.pid); } catch (err) { /* */ }
   if (DRAW.pts.length < 2) {
     DRAW.el.remove();                                  // clic suelto: nada que dejar
     DRAW = null;
