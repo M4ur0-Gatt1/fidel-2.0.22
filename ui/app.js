@@ -340,7 +340,12 @@ function applyState(st) {
   renderTree();
 }
 
-
+function updApis(st) {
+  const n = st.apis;
+  $("#apiTxt").textContent = `${n} API${n === 1 ? "" : "s"} conectada${n === 1 ? "" : "s"}`;
+  $("#apiDot").classList.toggle("off", !n);
+  const p = S.providers.find(x => x.name === providerName($("#selProv").value));
+  const ok = p && (p.has_key || p.name === "custom");
   $("#agBadge").textContent = ok ? "activo" : "sin key";
   $("#agBadge").classList.toggle("off", !ok);
   $("#provDot").classList.toggle("off", !ok);
@@ -363,8 +368,6 @@ function bind() {
     document.body.classList.toggle("light", S.theme === "light");
     $("#btnTheme").innerHTML = icoUse(S.theme === "dark" ? "i-sun" : "i-moon");
     await api.set_theme(S.theme);
-  };
-
   };
   $("#selModel").onchange = () => api.set_model($("#selModel").value);
   $("#btnModelSearch").onclick = modalModelSearch;
