@@ -511,7 +511,7 @@ function bind() {
   try { $("#dzCanvas").addEventListener("pointerrawupdate", dzDrawRaw); } catch (e) { /* no soportado */ }
   // el lápiz saliendo de rango / pointer cancelado no debe dejar el trazo colgado
   $("#dzCanvas").addEventListener("pointercancel", dzDrawUp);
-  $("#dzCanvas").addEventListener("lostpointercapture", (e) => { if (DRAW && e.pointerId === DRAW.pid) dzDrawUp(e); });
+  $("#dzCanvas").addEventListener("lostpointercapture", (e) => { dzDrawUp(e); });
   $("#dzCanvas").addEventListener("dblclick", (e) => {
     if (PEN) { dzPenFinish(false); return; }
     // flecha negra: doble clic ENTRA al grupo (selección profunda, como Animate)
@@ -2762,7 +2762,8 @@ function dzPenDebugToggle() {
 }
 
 function dzSetTool(t) {
-  if (DRAW && DRAW._pending) dzFinalizeStroke();       // cerrá cualquier trazo pendiente
+  if (TABLET_STATE === OT.RELEASED && TABLET_TRACK) _otFinalizeTablet();
+  if (MOUSE_STATE === OT.RELEASED && MOUSE_TRACK) _otFinalizeMouse();
   DZ.tool = t;
   document.querySelectorAll(".dz-toolbtn").forEach(b =>
     b.classList.toggle("active", b.dataset.tool === t));
@@ -2788,66 +2789,145 @@ function dzReleaseFocus() {
    OpenToonz usa un track continuo con presión por punto (TThickPoint);
    en la web la presión puede fluctuar frame a frame → media móvil.
    Aplica curva gamma de sensibilidad (OpenToonz V_BrushPressureSensitivity). ── */
-function dzSmoothPressure(pr) {
-  if (!DRAW) return pr || 0.5;
-  if (!DRAW._pbuf) DRAW._pbuf = [];
+function dzSmoothPressure(pr, track) {
+  if (!track) return pr || 0.5;
+  if (!track._pbuf) track._pbuf = [];
   const BUF = 5;
-  // presión 0 con pluma es común al inicio del trazo → piso suave 0.03
   const clamped = Math.max(0.03, pr || 0.03);
-  DRAW._pbuf.push(clamped);
-  if (DRAW._pbuf.length > BUF) DRAW._pbuf.shift();
-  let s = 0; for (let i = 0; i < DRAW._pbuf.length; i++) s += DRAW._pbuf[i];
-  const avg = s / DRAW._pbuf.length;
-  // curva gamma: <1 más sensible al inicio, >1 más control al final
+  track._pbuf.push(clamped);
+  if (track._pbuf.length > BUF) track._pbuf.shift();
+  let s = 0; for (let i = 0; i < track._pbuf.length; i++) s += track._pbuf[i];
+  const avg = s / track._pbuf.length;
   const gamma = DZ.pressureGamma !== undefined ? DZ.pressureGamma : 0.85;
   return Math.pow(avg, gamma);
 }
 
-/* pointerrawupdate: eventos de alta frecuencia de la tableta (≈200Hz),
-   igual que WinTab en OpenToonz. Solo se dispara con el lápiz presionado.
-   Guardamos timestamp para que pointermove rellene huecos si raw se atrasa. */
+/* ═══════════════════════════════════════════════════════════════════════
+   SISTEMA DE DIBUJO ESTILO OpenToonz
+   ═══════════════════════════════════════════════════════════════════════
+   Máquina de estados dual (TabletState / MouseState), igual que SceneViewer:
+     None → Touched → StartStroke → OnStroke → Released
+   - Tableta y mouse NUNCA se mezclan (dos tracks independientes).
+   - Hover (buttons=0) solo actualiza posición, nunca activa trazo.
+   - StartStroke: el primer move después del press inicia realmente el trazo.
+   - pointerrawupdate = WinTab de OpenToonz (~200Hz), solo con contacto real.
+   ═══════════════════════════════════════════════════════════════════════ */
+const OT = {               // OpenToonz-style state
+  NONE: 0,
+  TOUCHED: 1,              // pointerdown recibido, esperando primer move
+  START_STROKE: 2,         // primer move → inicia trazo
+  ON_STROKE: 3,            // dibujando
+  RELEASED: 4              // pointerup, en timeout de stitching
+};
+let TABLET_STATE = OT.NONE;  // state machine para pen/eraser
+let MOUSE_STATE = OT.NONE;   // state machine para mouse
+let TABLET_TRACK = null;     // { pid, pts, devType, ... } — track activo de tableta
+let MOUSE_TRACK = null;      // track activo de mouse
+let HOVER_POS = null;        // última posición de hover (pluma sin tocar)
+
+function _otDevType(e) {
+  if (e.pointerType === "pen") return "pen";
+  if (e.pointerType === "eraser") return "eraser";
+  return "mouse";
+}
+
+function _otPressure(e) {
+  if (e.pointerType === "pen" && e.pressure != null) return e.pressure;
+  if (e.pointerType === "eraser" && e.pressure != null) return e.pressure;
+  return 0.5;  // mouse: presión fija
+}
+
+function _otAddPoint(track, x, y, pr) {
+  const last = track.pts[track.pts.length - 1];
+  const dx = x - last[0], dy = y - last[1];
+  const d2 = dx * dx + dy * dy;
+  const minD2 = Math.max(0.05, 0.30 / (DZ.zoom || 1));
+  if (d2 < minD2) return false;
+  if (d2 > track.maxJump2) return false;
+  track._lastRaw = performance.now();
+  const smPr = dzSmoothPressure(pr, track);
+  track.pts.push([x, y, smPr]);
+  if (track.mode !== "pencil") {
+    const seg = document.createElementNS(SVGNS, "path");
+    seg.setAttribute("d", `M ${last[0].toFixed(1)} ${last[1].toFixed(1)} L ${x.toFixed(1)} ${y.toFixed(1)}`);
+    seg.setAttribute("stroke-width", Math.max(0.3, (DZ.drawW || 6) * 2 * smPr).toFixed(1));
+    track.el.appendChild(seg);
+  }
+  if (track.mode === "pencil") track.el.setAttribute("d", dzSmoothPath(track.pts));
+  return true;
+}
+
+function _otBeginTrack(e, svg) {
+  const vb = (svg.getAttribute("viewBox") || "0 0 1080 1080").split(/\s+/).map(Number);
+  const dim = Math.max(vb[2] || 1080, vb[3] || 1080);
+  const p = dzToUser(e.clientX, e.clientY);
+  const initPr = _otPressure(e);
+  const dev = _otDevType(e);
+  const track = {
+    pts: [[p.x, p.y, initPr]], mode: DZ.tool, el: null,
+    pid: e.pointerId, devType: dev,
+    maxJump2: (dim * 0.55) ** 2,
+    _lastPr: initPr, _pbuf: [initPr, initPr, initPr, initPr, initPr],
+    _lastRaw: 0, _pending: null,
+    _tiltX: (e.tiltX != null) ? e.tiltX : 0,
+    _tiltY: (e.tiltY != null) ? e.tiltY : 0
+  };
+  if (DZ.tool === "pencil") {
+    track.el = document.createElementNS(SVGNS, "path");
+    track.el.setAttribute("fill", "none");
+    track.el.setAttribute("stroke", DZ.drawColor || "#F0450E");
+    track.el.setAttribute("stroke-width", DZ.drawW || 6);
+    track.el.setAttribute("stroke-linecap", "round");
+    track.el.setAttribute("stroke-linejoin", "round");
+  } else {
+    track.el = document.createElementNS(SVGNS, "g");
+    track.el.setAttribute("data-low", "brush");
+    track.el.setAttribute("stroke", DZ.drawColor || "#F0450E");
+    track.el.setAttribute("fill", "none");
+    track.el.setAttribute("stroke-linecap", "round");
+  }
+  svg.appendChild(track.el);
+  try { $("#dzCanvas").setPointerCapture(e.pointerId); } catch (err) { /* */ }
+  return track;
+}
+
+/* pointerrawupdate: eventos de alta frecuencia (≈200Hz), equivalente a WinTab.
+   Solo debe llegar con contacto real (el navegador lo garantiza). */
 function dzDrawRaw(e) {
-  if (!DRAW || e.pointerId !== DRAW.pid) return;
-  if (e.buttons === 0) return;                       // hover: ignorar (raw no debería llegar sin contacto, pero por seguridad)
-  if (DRAW._pending) { clearTimeout(DRAW._pending); DRAW._pending = null; }
+  if (!TABLET_TRACK || e.pointerId !== TABLET_TRACK.pid) return;
+  if (e.buttons === 0) return;
+  if (TABLET_TRACK._pending) { clearTimeout(TABLET_TRACK._pending); TABLET_TRACK._pending = null; }
   e.preventDefault();
   const p = dzToUser(e.clientX, e.clientY);
-  const last = DRAW.pts[DRAW.pts.length - 1];
-  const dx = p.x - last[0], dy = p.y - last[1];
-  const d2 = dx * dx + dy * dy;
-  const minD2 = Math.max(0.06, 0.35 / (DZ.zoom || 1));  // aún más fino
-  if (d2 < minD2) return;                                // ⚠ NO setear _lastRaw si no se agrega punto
-  if (d2 > DRAW.maxJump2) return;
-  // ⚠ _lastRaw SOLO se actualiza cuando REALMENTE se agrega un punto
-  DRAW._lastRaw = performance.now();
-  let pr = (e.pointerType === "pen" && e.pressure != null) ? e.pressure
-           : (DRAW._lastPr > 0 ? DRAW._lastPr : 0.5);
-  DRAW._lastPr = pr;
-  if (e.tiltX != null) { DRAW._tiltX = e.tiltX; DRAW._tiltY = e.tiltY; }
-  pr = dzSmoothPressure(pr);
-  DRAW.pts.push([p.x, p.y, pr]);
-  if (DRAW.mode !== "pencil") {
-    const seg = document.createElementNS(SVGNS, "path");
-    seg.setAttribute("d", `M ${last[0].toFixed(1)} ${last[1].toFixed(1)} L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`);
-    seg.setAttribute("stroke-width", Math.max(0.3, (DZ.drawW || 6) * 2 * pr).toFixed(1));
-    DRAW.el.appendChild(seg);
-  }
-  if (DRAW.mode === "pencil") DRAW.el.setAttribute("d", dzSmoothPath(DRAW.pts));
+  let pr = _otPressure(e);
+  TABLET_TRACK._lastPr = pr;
+  if (e.tiltX != null) { TABLET_TRACK._tiltX = e.tiltX; TABLET_TRACK._tiltY = e.tiltY; }
+  _otAddPoint(TABLET_TRACK, p.x, p.y, pr);
 }
 
 function dzDrawDown(e) {
   dzReleaseFocus();
   const tool = DZ.tool || "select";
-  if (DZ.spaceDown || e.button === 1 || tool === "hand") return;   // paneo: lo maneja dzPointerDown
+  if (DZ.spaceDown || e.button === 1 || tool === "hand") return;
   if (e.target.closest && e.target.closest("#dzCam")) return;
-  if (tool === "select" || tool === "direct") return;  // seleccionar: flujo clásico
+  if (tool === "select" || tool === "direct") return;
   const svg = $("#dzCanvas").querySelector("svg");
   if (!svg || e.button !== 0) return;
-  // ⛔ hover fantasma de tableta: la pluma manda pointerdown con presión baja en hover.
-  //    e.buttons es el indicador canónico: 0 = hover, 1 (o 32) = contacto real.
-  if (e.pointerType === "pen" && e.buttons === 0) return;   // hover sin contacto real
-  if (e.pointerType === "pen" && (!e.pressure || e.pressure <= 0.08)) return;  // backup
-  e.preventDefault(); e.stopPropagation();             // suprime los mouse events
+
+  const dev = _otDevType(e);
+
+  // ═══ HOVER DETECTION (estilo OpenToonz setTabletTracking) ═══
+  // Si la pluma está en hover (sin tocar la superficie), NUNCA iniciamos trazo.
+  // OpenToonz: tablet events con presión 0 o sin contacto = hover puro.
+  if (dev !== "mouse") {
+    // Gate 1: e.buttons === 0 → no hay contacto físico
+    if (e.buttons === 0) return;
+    // Gate 2: presión nula o casi nula → hover fantasma
+    const pr = (e.pressure != null) ? e.pressure : 0;
+    if (pr <= 0.02) return;
+  }
+
+  e.preventDefault(); e.stopPropagation();
   if (tool === "pivot") { dzPivotClick(e); return; }
   if (tool === "nodes") { dzNodesClick(e); return; }
   if (tool === "dropper") { dzDropperPick(e); return; }
@@ -2855,148 +2935,156 @@ function dzDrawDown(e) {
   if (tool === "eraser") { dzEraseStart(e); return; }
   const p = dzToUser(e.clientX, e.clientY);
   if (DZ.tool === "pen") { dzPenDown(p); return; }
-  const vb = (svg.getAttribute("viewBox") || "0 0 1080 1080").split(/\s+/).map(Number);
-  const dim = Math.max(vb[2] || 1080, vb[3] || 1080);
-  const jump = dim * 0.55;
-  // STITCHING inspirado en OpenToonz TInputManager (track por dispositivo):
-  // Windows Ink / tabletas fragmentan el trazo con up/down fantasmas.
-  // OpenToonz mantiene UN track por (deviceId, touchId); si el mismo
-  // dispositivo reaparece, reanuda. Nosotros:
-  //   1) mismo pointerId → stitching inmediato (el SO reutilizó el ID)
-  //   2) misma herramienta + cerca (< 12% del lienzo) + timeout 250ms
-  if (DRAW && DRAW._pending && DRAW.mode === DZ.tool) {
-    const last = DRAW.pts[DRAW.pts.length - 1];
-    const samePid = DRAW._lastPid != null && e.pointerId === DRAW._lastPid;
-    const near = (p.x - last[0]) ** 2 + (p.y - last[1]) ** 2 < (dim * 0.12) ** 2;
+
+  // ═══ STITCHING (TInputManager::createTrack / getTrack) ═══
+  // OpenToonz: si mismo dispositivo reaparece → reanuda track existente.
+  if (dev !== "mouse" && TABLET_STATE === OT.RELEASED && TABLET_TRACK) {
+    const last = TABLET_TRACK.pts[TABLET_TRACK.pts.length - 1];
+    const samePid = TABLET_TRACK.pid != null && e.pointerId === TABLET_TRACK.pid;
+    const near = (p.x - last[0]) ** 2 + (p.y - last[1]) ** 2 < (Math.max(1080, (svg.getAttribute("viewBox")||"0 0 1080 1080").split(/\s+/)[2]||1080) * 0.12) ** 2;
     if (samePid || near) {
-      // stitching genuino solo si hay contacto real (e.buttons > 0) y presión real
-      const stPr = (e.pointerType === "pen" && e.pressure != null) ? e.pressure : 0.5;
-      if (e.pointerType === "pen" && e.buttons === 0) { dzFinalizeStroke(); return; }
-      if (e.pointerType === "pen" && stPr <= 0.08) { dzFinalizeStroke(); return; }
-      clearTimeout(DRAW._pending); DRAW._pending = null;
-      DRAW.pid = e.pointerId;
-      DRAW._lastRaw = 0;                                // 0 → fallback activo desde ya
-      let pr = Math.max(0.03, stPr);
-      DRAW._lastPr = pr;
-      DRAW._pbuf = [pr, pr, pr, pr, pr];               // resetear buffer
-      if (e.tiltX != null) { DRAW._tiltX = e.tiltX; DRAW._tiltY = e.tiltY; }
-      DRAW.pts.push([p.x, p.y, pr]);   // conectar el tramo
+      if (e.buttons === 0 || _otPressure(e) <= 0.02) { _otFinalizeTablet(); return; }
+      if (TABLET_TRACK._pending) { clearTimeout(TABLET_TRACK._pending); TABLET_TRACK._pending = null; }
+      TABLET_TRACK.pid = e.pointerId;
+      TABLET_TRACK._lastRaw = 0;
+      const pr = _otPressure(e);
+      TABLET_TRACK._lastPr = pr;
+      TABLET_TRACK._pbuf = [pr, pr, pr, pr, pr];
+      TABLET_TRACK.pts.push([p.x, p.y, pr]);
+      TABLET_STATE = OT.ON_STROKE;
       try { $("#dzCanvas").setPointerCapture(e.pointerId); } catch (err) { /* */ }
       return;
     }
-    dzFinalizeStroke();                                // arranca lejos → cerrá el anterior
+    _otFinalizeTablet();
   }
-  dzSnapshot();                                        // Ctrl+Z deshace el trazo
-  // Presión inicial: si es pluma, siempre tomarla (piso 0.03 para que no sea invisible)
-  let initPr = (e.pointerType === "pen" && e.pressure != null) ? Math.max(0.03, e.pressure) : 0.5;
-  const initTx = (e.tiltX != null) ? e.tiltX : 0;
-  const initTy = (e.tiltY != null) ? e.tiltY : 0;
-  DRAW = { pts: [[p.x, p.y, initPr]], mode: DZ.tool, el: null,
-           pid: e.pointerId, maxJump2: jump * jump, _pending: null,
-           _lastPr: initPr, _pbuf: [initPr, initPr, initPr, initPr, initPr],
-           _lastPid: e.pointerId, _lastRaw: 0,          // 0 = fallback pointermove activo (se actualiza con raw)
-           _tiltX: initTx, _tiltY: initTy, _devId: e.pointerId };
-  if (DZ.tool === "pencil") {
-    DRAW.el = document.createElementNS(SVGNS, "path");
-    DRAW.el.setAttribute("fill", "none");
-    DRAW.el.setAttribute("stroke", DZ.drawColor || "#F0450E");
-    DRAW.el.setAttribute("stroke-width", DZ.drawW || 6);
-    DRAW.el.setAttribute("stroke-linecap", "round");
-    DRAW.el.setAttribute("stroke-linejoin", "round");
-  } else {                                             // pincel: grosor por presión
-    DRAW.el = document.createElementNS(SVGNS, "g");
-    DRAW.el.setAttribute("data-low", "brush");
-    DRAW.el.setAttribute("stroke", DZ.drawColor || "#F0450E");
-    DRAW.el.setAttribute("fill", "none");
-    DRAW.el.setAttribute("stroke-linecap", "round");
+
+  if (dev !== "mouse") {
+    // tableta: iniciamos track nuevo
+    dzSnapshot();
+    TABLET_TRACK = _otBeginTrack(e, svg);
+    TABLET_STATE = OT.TOUCHED;
+  } else {
+    // mouse: track separado
+    dzSnapshot();
+    MOUSE_TRACK = _otBeginTrack(e, svg);
+    MOUSE_STATE = OT.TOUCHED;
   }
-  svg.appendChild(DRAW.el);
-  try { $("#dzCanvas").setPointerCapture(e.pointerId); } catch (err) { /* */ }
 }
+
 function dzDrawMove(e) {
   if (PEN && PEN.dragging) { dzPenDrag(dzToUser(e.clientX, e.clientY)); return; }
-  if (PEN && !DRAW) { dzPenHover(dzToUser(e.clientX, e.clientY)); return; }
-  if (!DRAW) return;
-  // trazo en pausa que se reanuda por movimiento: sólo si hay presión real.
-  // Un pointermove con presión 0 del mismo lápiz es hover, NO reanuda el trazo.
-  if (DRAW._pending) {
-    if (e.pointerType === "pen" && e.buttons === 0) return;   // hover: no reanudar
-    const mvPr = (e.pointerType === "pen" && e.pressure != null) ? e.pressure : 0.5;
-    if (e.pointerType === "pen" && mvPr <= 0.08) return;   // presión demasiado baja
-    clearTimeout(DRAW._pending); DRAW._pending = null; DRAW.pid = e.pointerId;
+  if (PEN && !TABLET_TRACK && !MOUSE_TRACK) { dzPenHover(dzToUser(e.clientX, e.clientY)); return; }
+
+  const dev = _otDevType(e);
+  const track = (dev !== "mouse") ? TABLET_TRACK : MOUSE_TRACK;
+  const state = (dev !== "mouse") ? TABLET_STATE : MOUSE_STATE;
+
+  // ═══ HOVER: solo actualizar posición, nunca dibujar ═══
+  if (!track || state === OT.NONE) {
+    if (dev !== "mouse" && e.buttons === 0) { HOVER_POS = dzToUser(e.clientX, e.clientY); }
+    return;
   }
-  if (e.pointerId !== DRAW.pid) return;                // ignorá OTROS punteros (palma/2º dedo/hover)
-  if (e.buttons === 0) return;                       // mismo dispositivo en hover, no dibujar
+
+  // ═══ RELEASED: stitching pendiente → si hay presión real, reanudar ═══
+  if (state === OT.RELEASED) {
+    if (dev !== "mouse" && e.buttons === 0) return;
+    if (dev !== "mouse" && _otPressure(e) <= 0.02) return;
+    if (e.pointerId !== track.pid) return;
+    if (track._pending) { clearTimeout(track._pending); track._pending = null; }
+    if (dev !== "mouse") TABLET_STATE = OT.ON_STROKE;
+    else MOUSE_STATE = OT.ON_STROKE;
+  }
+
+  if (e.pointerId !== track.pid) return;
+  if (e.buttons === 0) return;
+
   e.preventDefault();
-  // FALLBACK HÍBRIDO: si pointerrawupdate llegó hace < 30ms, raw está activo
-  // y no interferimos. Si pasó más (raw va lento o se perdió frame),
-  // procesamos pointermove + coalesced events para rellenar huecos.
+
+  // ═══ StartStroke: primer move después de Touched → inicia trazo real ═══
+  if (state === OT.TOUCHED) {
+    if (dev !== "mouse") TABLET_STATE = OT.START_STROKE;
+    else MOUSE_STATE = OT.START_STROKE;
+  }
+
+  // ═══ FALLBACK HÍBRIDO: raw vs coalesced ═══
   const now = performance.now();
-  if (DRAW._lastRaw && (now - DRAW._lastRaw) < 30) return;
-  // eventos coalescidos: la tableta muestrea a 100-250Hz pero el navegador
-  // agrupa — sin esto las curvas rápidas salen poligonales.
+  if (track._lastRaw && (now - track._lastRaw) < 30) return;
+
   const evs = (e.getCoalescedEvents && e.getCoalescedEvents().length)
     ? e.getCoalescedEvents() : [e];
   for (const ev of evs) {
     const p = dzToUser(ev.clientX, ev.clientY);
-    const last = DRAW.pts[DRAW.pts.length - 1];
-    const dx = p.x - last[0], dy = p.y - last[1];
-    const d2 = dx * dx + dy * dy;
-    // umbral más fino (0.08 base, 0.45/zoom) → captura más detalle
-    const minD2 = Math.max(0.08, 0.45 / (DZ.zoom || 1));
-    if (d2 < minD2) continue;
-    if (d2 > DRAW.maxJump2) continue;                  // rechazo de spike (glitch de tableta)
-    // presión: si es pluma SIEMPRE usar el valor real (incluso 0 → piso en smoother)
-    let pr = (ev.pointerType === "pen" && ev.pressure != null) ? Math.max(0.03, ev.pressure)
-             : (DRAW._lastPr || 0.5);
-    DRAW._lastPr = pr;
-    if (ev.tiltX != null) { DRAW._tiltX = ev.tiltX; DRAW._tiltY = ev.tiltY; }
-    pr = dzSmoothPressure(pr);
-    DRAW.pts.push([p.x, p.y, pr]);
-    if (DRAW.mode !== "pencil") {
-      const seg = document.createElementNS(SVGNS, "path");
-      seg.setAttribute("d", `M ${last[0].toFixed(1)} ${last[1].toFixed(1)} L ${p.x.toFixed(1)} ${p.y.toFixed(1)}`);
-      seg.setAttribute("stroke-width", Math.max(0.3, (DZ.drawW || 6) * 2 * pr).toFixed(1));
-      DRAW.el.appendChild(seg);
-    }
+    let pr = _otPressure(ev);
+    if (dev !== "mouse") track._lastPr = pr;
+    if (ev.tiltX != null) { track._tiltX = ev.tiltX; track._tiltY = ev.tiltY; }
+    _otAddPoint(track, p.x, p.y, pr);
   }
-  if (DRAW.mode === "pencil") DRAW.el.setAttribute("d", dzSmoothPath(DRAW.pts));
+
+  if (state === OT.START_STROKE) {
+    if (dev !== "mouse") TABLET_STATE = OT.ON_STROKE;
+    else MOUSE_STATE = OT.ON_STROKE;
+  }
 }
+
 function dzDrawUp(e) {
   if (PEN && PEN.dragging) { dzPenUp(); return; }
-  if (!DRAW) return;
-  // solo reacciona al pointer que lo inició (un 2º contacto no lo corta)
-  if (e && e.pointerId != null && e.pointerId !== DRAW.pid
+
+  const dev = _otDevType(e);
+  const track = (dev !== "mouse") ? TABLET_TRACK : MOUSE_TRACK;
+  if (!track) return;
+
+  if (e && e.pointerId != null && e.pointerId !== track.pid
       && e.type !== "pointercancel" && e.type !== "lostpointercapture") return;
-  DRAW._lastPid = DRAW.pid;                            // recordar para stitching por mismo ID
-  try { $("#dzCanvas").releasePointerCapture(DRAW.pid); } catch (err) { /* */ }
-  // Si la pluma se levanta sin contacto real (buttons=0) o presión ínfima → fantasma
-  const upPr = (e && e.pointerType === "pen" && e.pressure != null) ? e.pressure : -1;
-  if (e && e.pointerType === "pen" && e.buttons === 0) { dzFinalizeStroke(); return; }
-  if (upPr >= 0 && upPr <= 0.08) { dzFinalizeStroke(); return; }
-  // NO finalizar al toque: la tableta puede fragmentar con up/down rápidos.
-  // OpenToonz usa track continuity con timeout; 350ms para tabletas más lentas.
-  if (DRAW._pending) clearTimeout(DRAW._pending);
-  DRAW._pending = setTimeout(dzFinalizeStroke, 350);
+
+  try { $("#dzCanvas").releasePointerCapture(track.pid); } catch (err) { /* */ }
+
+  // ═══ Hover fantasma: up sin contacto real → cerrar ya ═══
+  if (dev !== "mouse") {
+    if (e && e.buttons === 0) { _otFinalizeTablet(); return; }
+    const upPr = (e && e.pressure != null) ? e.pressure : -1;
+    if (upPr >= 0 && upPr <= 0.02) { _otFinalizeTablet(); return; }
+  }
+
+  // ═══ RELEASED: timeout de stitching (como OpenToonz track continuity) ═══
+  if (dev !== "mouse") {
+    TABLET_STATE = OT.RELEASED;
+    if (track._pending) clearTimeout(track._pending);
+    track._pending = setTimeout(_otFinalizeTablet, 350);
+  } else {
+    MOUSE_STATE = OT.RELEASED;
+    if (track._pending) clearTimeout(track._pending);
+    track._pending = setTimeout(_otFinalizeMouse, 200);  // mouse: timeout más corto
+  }
 }
-/* finaliza de verdad el trazo: post-procesado (media móvil + simplificación +
-   bezier), pincel → cinta de ancho variable, espejo. Se llama recién cuando el
-   trazo estuvo ~200ms sin reanudarse. */
-function dzFinalizeStroke() {
-  if (!DRAW) return;
-  if (DRAW._pending) { clearTimeout(DRAW._pending); DRAW._pending = null; }
-  const d = DRAW; DRAW = null;                          // tomar y limpiar (evita reentradas)
-  if (d.pts.length < 2) { if (d.el) d.el.remove(); return; }
-  const pts = dzRefineStroke(d.pts);
-  let finalEl = d.el;
-  if (d.mode === "pencil") {
-    d.el.setAttribute("d", dzSmoothPath(pts));
+
+function _otFinalizeTablet() {
+  if (!TABLET_TRACK) return;
+  const t = TABLET_TRACK; TABLET_TRACK = null;
+  TABLET_STATE = OT.NONE;
+  if (t._pending) { clearTimeout(t._pending); t._pending = null; }
+  _otFinalizeTrack(t);
+}
+
+function _otFinalizeMouse() {
+  if (!MOUSE_TRACK) return;
+  const t = MOUSE_TRACK; MOUSE_TRACK = null;
+  MOUSE_STATE = OT.NONE;
+  if (t._pending) { clearTimeout(t._pending); t._pending = null; }
+  _otFinalizeTrack(t);
+}
+
+function _otFinalizeTrack(track) {
+  if (track.pts.length < 2) { if (track.el) track.el.remove(); return; }
+  const pts = dzRefineStroke(track.pts);
+  let finalEl = track.el;
+  if (track.mode === "pencil") {
+    track.el.setAttribute("d", dzSmoothPath(pts));
   } else {
     const ribbon = dzBrushRibbon(pts, DZ.drawW || 6, DZ.drawColor || "#F0450E");
-    if (ribbon) { d.el.replaceWith(ribbon); finalEl = ribbon; }
-    else { d.el.remove(); finalEl = null; }
+    if (ribbon) { track.el.replaceWith(ribbon); finalEl = ribbon; }
+    else { track.el.remove(); finalEl = null; }
   }
-  if (finalEl) dzMirrorClone(finalEl);                 // 🪞 modo espejo
+  if (finalEl) dzMirrorClone(finalEl);
   dzMarkDirty(); dzBuildLayers();
 }
 /* ══ post-procesado del trazo (como OpenToonz al soltar el lápiz):
