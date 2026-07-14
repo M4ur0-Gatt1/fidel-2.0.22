@@ -2895,7 +2895,8 @@ function _otBeginTrack(e, svg) {
    Solo debe llegar con contacto real (el navegador lo garantiza). */
 function dzDrawRaw(e) {
   if (!TABLET_TRACK || e.pointerId !== TABLET_TRACK.pid) return;
-  if (e.buttons === 0) return;
+  const rawPr = (e.pressure != null) ? e.pressure : 0;
+  if (e.buttons === 0 && rawPr <= 0.05) return;
   if (TABLET_TRACK._pending) { clearTimeout(TABLET_TRACK._pending); TABLET_TRACK._pending = null; }
   e.preventDefault();
   const p = dzToUser(e.clientX, e.clientY);
@@ -2912,7 +2913,8 @@ function dzDrawDown(e) {
   if (e.target.closest && e.target.closest("#dzCam")) return;
   if (tool === "select" || tool === "direct") return;
   const svg = $("#dzCanvas").querySelector("svg");
-  if (!svg || e.button !== 0) return;
+  // e.button puede ser -1 en tabletas Huion/XP-Pen (contacto ≠ botón físico)
+  if (!svg || e.button > 0) return;
 
   const dev = _otDevType(e);
 
@@ -2920,11 +2922,10 @@ function dzDrawDown(e) {
   // Si la pluma está en hover (sin tocar la superficie), NUNCA iniciamos trazo.
   // OpenToonz: tablet events con presión 0 o sin contacto = hover puro.
   if (dev !== "mouse") {
-    // Gate 1: e.buttons === 0 → no hay contacto físico
-    if (e.buttons === 0) return;
-    // Gate 2: presión nula o casi nula → hover fantasma
+    // Gate: solo hover si NO hay presión Y NO hay botón
+    // Muchas tabletas Huion mandan buttons=0 incluso al tocar → usamos presión como señal principal
     const pr = (e.pressure != null) ? e.pressure : 0;
-    if (pr <= 0.02) return;
+    if (e.buttons === 0 && pr <= 0.05) return;
   }
 
   e.preventDefault(); e.stopPropagation();
@@ -2943,7 +2944,8 @@ function dzDrawDown(e) {
     const samePid = TABLET_TRACK.pid != null && e.pointerId === TABLET_TRACK.pid;
     const near = (p.x - last[0]) ** 2 + (p.y - last[1]) ** 2 < (Math.max(1080, (svg.getAttribute("viewBox")||"0 0 1080 1080").split(/\s+/)[2]||1080) * 0.12) ** 2;
     if (samePid || near) {
-      if (e.buttons === 0 || _otPressure(e) <= 0.02) { _otFinalizeTablet(); return; }
+      const stPr = _otPressure(e);
+      if (e.buttons === 0 && stPr <= 0.05) { _otFinalizeTablet(); return; }
       if (TABLET_TRACK._pending) { clearTimeout(TABLET_TRACK._pending); TABLET_TRACK._pending = null; }
       TABLET_TRACK.pid = e.pointerId;
       TABLET_TRACK._lastRaw = 0;
@@ -2981,14 +2983,15 @@ function dzDrawMove(e) {
 
   // ═══ HOVER: solo actualizar posición, nunca dibujar ═══
   if (!track || state === OT.NONE) {
-    if (dev !== "mouse" && e.buttons === 0) { HOVER_POS = dzToUser(e.clientX, e.clientY); }
+    const mvPr = (e.pressure != null) ? e.pressure : 0;
+    if (dev !== "mouse" && e.buttons === 0 && mvPr <= 0.05) { HOVER_POS = dzToUser(e.clientX, e.clientY); }
     return;
   }
 
   // ═══ RELEASED: stitching pendiente → si hay presión real, reanudar ═══
   if (state === OT.RELEASED) {
-    if (dev !== "mouse" && e.buttons === 0) return;
-    if (dev !== "mouse" && _otPressure(e) <= 0.02) return;
+    const relPr = _otPressure(e);
+    if (dev !== "mouse" && e.buttons === 0 && relPr <= 0.05) return;
     if (e.pointerId !== track.pid) return;
     if (track._pending) { clearTimeout(track._pending); track._pending = null; }
     if (dev !== "mouse") TABLET_STATE = OT.ON_STROKE;
@@ -2996,7 +2999,8 @@ function dzDrawMove(e) {
   }
 
   if (e.pointerId !== track.pid) return;
-  if (e.buttons === 0) return;
+  const mvPr2 = (e.pressure != null) ? e.pressure : 0;
+  if (e.buttons === 0 && mvPr2 <= 0.05) return;
 
   e.preventDefault();
 
@@ -3040,9 +3044,8 @@ function dzDrawUp(e) {
 
   // ═══ Hover fantasma: up sin contacto real → cerrar ya ═══
   if (dev !== "mouse") {
-    if (e && e.buttons === 0) { _otFinalizeTablet(); return; }
     const upPr = (e && e.pressure != null) ? e.pressure : -1;
-    if (upPr >= 0 && upPr <= 0.02) { _otFinalizeTablet(); return; }
+    if (e && e.buttons === 0 && upPr <= 0.05) { _otFinalizeTablet(); return; }
   }
 
   // ═══ RELEASED: timeout de stitching (como OpenToonz track continuity) ═══
