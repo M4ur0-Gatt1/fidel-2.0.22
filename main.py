@@ -42,7 +42,7 @@ ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-LOW_VERSION = "3.17.0"
+LOW_VERSION = "3.17.1"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -491,22 +491,10 @@ class Api:
         log(f"[js] {msg}")
 
     def _base(s):
-        """Workspace efectivo para las tools. Si no hay, crea uno por defecto
-        en Documentos/LOW y avisa al frontend para que muestre el árbol."""
+        """Workspace efectivo para las tools. Si no hay, lanza excepción
+        para que el frontend pida al usuario que abra una carpeta."""
         if not s.ws:
-            try:
-                d = Path.home() / "Documents" / "LOW"
-                d.mkdir(parents=True, exist_ok=True)
-                s.ws = str(d)
-                s._push("ws", {"ws": s.ws, "tree": s._tree(), "branch": ""})
-            except (OSError, PermissionError) as e:
-                log(f"Error creando workspace por defecto: {e}")
-                # Fallback a directorio temporal si Documents no está disponible
-                import tempfile
-                d = Path(tempfile.gettempdir()) / "LOW"
-                d.mkdir(parents=True, exist_ok=True)
-                s.ws = str(d)
-                s._push("ws", {"ws": s.ws, "tree": s._tree(), "branch": ""})
+            raise RuntimeError("No hay workspace abierto. Por favor, abre una carpeta de proyecto primero.")
         return Path(s.ws)
 
     def _initp(s):

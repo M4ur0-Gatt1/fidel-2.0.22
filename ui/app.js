@@ -56,8 +56,14 @@ function reportErr(msg) {
 }
 window.addEventListener("error", e =>
   reportErr(`${e.message} @${(e.filename || "").split("/").pop()}:${e.lineno}`));
-window.addEventListener("unhandledrejection", e =>
-  reportErr("promesa rechazada: " + (e.reason && e.reason.message || e.reason)));
+window.addEventListener("unhandledrejection", e => {
+  const reason = e.reason && e.reason.message || e.reason;
+  if (reason && reason.includes("No hay workspace abierto")) {
+    showNoWorkspace();
+  } else {
+    reportErr("promesa rechazada: " + reason);
+  }
+});
 
 /* ── eventos que empuja Python ── */
 window.LOW = {
@@ -267,6 +273,16 @@ function setWs(d) {
   $("#branch").textContent = d.branch ? "⑂ " + d.branch : "";
   renderTree();
   sysMsg("📁 Workspace: " + d.ws);
+  persist("system", "📁 Workspace: " + d.ws);
+}
+
+function showNoWorkspace() {
+  sysMsg("⚠️ No hay workspace abierto. Abre una carpeta de proyecto para comenzar.");
+  $("#projName").textContent = "SIN PROYECTO";
+  $("#branch").textContent = "";
+  S.ws = null;
+  S.tree = [];
+  renderTree();
 }
 
 const SVG_RE = /\.svg$/i;
