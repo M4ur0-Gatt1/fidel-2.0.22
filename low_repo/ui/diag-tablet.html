@@ -136,7 +136,7 @@ function addEvent(type, e, note) {
 // === Event Listeners ===
 canvas.addEventListener('pointerdown', (e) => {
   e.preventDefault();
-  canvas.setPointerCapture(e.pointerId);
+  // NO usar setPointerCapture — causa lostpointercapture que corta el trazo
   addEvent('pointerdown', e);
   drawing = true;
   trackPid = e.pointerId;
@@ -188,9 +188,7 @@ canvas.addEventListener('pointercancel', (e) => {
   trackPid = null;
 });
 
-canvas.addEventListener('lostpointercapture', (e) => {
-  addEvent('lostpointercapture', e, '⚠ LOST CAPTURE');
-});
+// lostpointercapture NO se usa — setPointerCapture eliminado
 
 canvas.addEventListener('pointerrawupdate', (e) => {
   cntRaw++;
