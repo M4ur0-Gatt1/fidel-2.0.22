@@ -2932,11 +2932,9 @@ function _drawFinish() {
 
 function dzDrawRaw(e) {
   if (!DRAW_TRACK || e.pointerId !== DRAW_TRACK.pid) return;
-  // Si no hay presión, ignorar (hover)
-  const pr = (e.pressure != null) ? e.pressure : 0;
-  if (pr <= 0.02) return;
   e.preventDefault();
   const p = dzToUser(e.clientX, e.clientY);
+  const pr = (e.pressure != null) ? e.pressure : _otPressure(e);
   _drawAddPoint(DRAW_TRACK, p.x, p.y, pr);
 }
 
@@ -2949,12 +2947,7 @@ function dzDrawDown(e) {
   const svg = $("#dzCanvas").querySelector("svg");
   if (!svg) return;
 
-  // ═══ HOVER: la ÚNICA condición para ignorar es presión cero en pluma ═══
-  const dev = _otDevType(e);
-  if (dev !== "mouse") {
-    const pr = (e.pressure != null) ? e.pressure : 0;
-    if (pr <= 0.02) return;  // hover: Huion manda ~0.005 sin contacto
-  }
+
 
   e.preventDefault(); e.stopPropagation();
   if (tool === "pivot") { dzPivotClick(e); return; }
@@ -2978,12 +2971,7 @@ function dzDrawMove(e) {
   if (!DRAW_TRACK) return;
   if (e.pointerId !== DRAW_TRACK.pid) return;
 
-  // ═══ HOVER: ignorar si no hay presión (pluma sin contacto) ═══
-  const dev = _otDevType(e);
-  if (dev !== "mouse") {
-    const pr = (e.pressure != null) ? e.pressure : 0;
-    if (pr <= 0.02) return;
-  }
+
 
   e.preventDefault();
 
