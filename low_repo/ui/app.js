@@ -2843,16 +2843,27 @@ function dzSmoothPressure(pr, track) {
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
-   SISTEMA DE DIBUJO — v4 simplificado
+   SISTEMA DE DIBUJO — v5 (v3.17.5)
    ═══════════════════════════════════════════════════════════════════════
    Un solo track activo. Sin máquinas de estado, sin stitching con timeout.
    Principio: acumular todos los puntos y renderizar. El post-procesado
    (Ramer-Douglas-Peucker + Catmull-Rom) limpia el ruido después.
    
-   Reglas de hover para tableta (el 90% de los bugs vienen de acá):
-   - pressure === 0  →  hover (ignorar)
-   - pressure > 0    →  contacto real (dibujar)
-   - pointerType !== "pen"  →  mouse (dibujar siempre en down)
+   pointerdown con pointerType==="pen" → SIEMPRE inicia trazo.
+   El navegador solo dispara pointerdown con contacto real (spec).
+   La presión solo afecta el GROSOR del trazo, no si se dibuja o no.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+function _dzDiag(msg, color) {
+  const log = $("#dzPenDbgLog");
+  if (log) {
+    const row = document.createElement("div"); row.textContent = msg;
+    if (color) row.style.color = color;
+    log.appendChild(row);
+    while (log.childElementCount > 60) log.firstChild.remove();
+  }
+  console.log("[LOW:draw]", msg);
+}
    ═══════════════════════════════════════════════════════════════════════ */
 
 let DRAW_TRACK = null;   // UN solo track: { pts, mode, el, pid, devType, _pbuf }
@@ -2932,9 +2943,8 @@ function _drawFinish() {
 
 function dzDrawRaw(e) {
   if (!DRAW_TRACK || e.pointerId !== DRAW_TRACK.pid) return;
-  // Si no hay presión, ignorar (hover)
-  const pr = (e.pressure != null) ? e.pressure : 0;
-  if (pr <= 0.02) return;
+  // Si hay track activo, SIEMPRE procesar (la presión puede ser 0 en el primer frame)
+  const pr = (e.pressure != null) ? e.pressure : _otPressure(e);
   e.preventDefault();
   const p = dzToUser(e.clientX, e.clientY);
   _drawAddPoint(DRAW_TRACK, p.x, p.y, pr);
@@ -2949,12 +2959,9 @@ function dzDrawDown(e) {
   const svg = $("#dzCanvas").querySelector("svg");
   if (!svg) return;
 
-  // ═══ HOVER: la ÚNICA condición para ignorar es presión cero en pluma ═══
-  const dev = _otDevType(e);
-  if (dev !== "mouse") {
-    const pr = (e.pressure != null) ? e.pressure : 0;
-    if (pr <= 0.02) return;  // hover: Huion manda ~0.005 sin contacto
-  }
+  // ═══ pointerdown SIEMPRE inicia trazo si es pen ═══
+  _dzDiag("▼ down " + e.pointerType + " pr:" + (e.pressure != null ? e.pressure.toFixed(4) : "null") +
+    " btn:" + e.button + " btns:" + e.buttons + " tool:" + tool, "#33B5E8");
 
   e.preventDefault(); e.stopPropagation();
   if (tool === "pivot") { dzPivotClick(e); return; }
@@ -2978,13 +2985,8 @@ function dzDrawMove(e) {
   if (!DRAW_TRACK) return;
   if (e.pointerId !== DRAW_TRACK.pid) return;
 
-  // ═══ HOVER: ignorar si no hay presión (pluma sin contacto) ═══
-  const dev = _otDevType(e);
-  if (dev !== "mouse") {
-    const pr = (e.pressure != null) ? e.pressure : 0;
-    if (pr <= 0.02) return;
-  }
-
+  // ═══ Si hay DRAW_TRACK activo y mismo pointerId, SIEMPRE dibujar ═══
+  // (la presión solo afecta el grosor, no si se dibuja)
   e.preventDefault();
 
   // Procesar eventos coalescidos (alta precisión)
@@ -3002,6 +3004,7 @@ function dzDrawUp(e) {
   if (!DRAW_TRACK) return;
   if (e && e.pointerId != null && e.pointerId !== DRAW_TRACK.pid
       && e.type !== "pointercancel" && e.type !== "lostpointercapture") return;
+  _dzDiag("▲ up   id" + (e ? e.pointerId : "?") + " pts:" + (DRAW_TRACK ? DRAW_TRACK.pts.length : 0), "#F0450E");
   _drawFinish();
 }
 /* ══ post-procesado del trazo (como OpenToonz al soltar el lápiz):
