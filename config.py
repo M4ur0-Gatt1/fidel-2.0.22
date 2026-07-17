@@ -64,9 +64,9 @@ DEFAULT_CONFIG = {
         "qwen": {"api_key": "", "model": "qwen-plus", "base_url": ""},
         "glm": {"api_key": "", "model": "glm-4", "base_url": ""},
         "xai": {"api_key": "", "model": "grok-2", "base_url": ""},
-        # Agnes AI — OpenAI-compatible (https://platform.agnes-ai.com)
-        # Key: https://platform.agnes-ai.com/settings/apiKeys
-        "agnes": {"api_key": "", "model": "gpt-4o", "base_url": "https://platform.agnes-ai.com/v1"},
+# Agnes AI — OpenAI-compatible (https://api.agnes-ai.com)
+# Key: https://platform.agnes-ai.com/settings/apiKeys
+        "agnes": {"api_key": "", "model": "gpt-4o", "base_url": "https://api.agnes-ai.com/api/v1"},
         # DigitalOcean GenAI Platform — Serverless Inference (compatible OpenAI).
         # Endpoint: https://inference.do-ai.run/v1  → da acceso a TODOS los modelos
         # con los que tengas acceso (Llama, DeepSeek, Mistral, OpenAI, Anthropic).

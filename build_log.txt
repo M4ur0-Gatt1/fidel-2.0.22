@@ -1,0 +1,115 @@
+127 INFO: PyInstaller: 6.21.0, contrib hooks: 2026.6
+128 INFO: Python: 3.14.5
+147 INFO: Platform: Windows-10-10.0.19045-SP0
+147 INFO: Python environment: C:\Python314
+149 INFO: Removing temporary files and cleaning cache in C:\Users\Mauro\AppData\Local\pyinstaller
+155 INFO: Module search paths (PYTHONPATH):
+['D:\\LOW\\low-3.17.9',
+ 'C:\\Python314\\python314.zip',
+ 'C:\\Python314\\DLLs',
+ 'C:\\Python314\\Lib',
+ 'C:\\Python314',
+ 'C:\\Users\\Mauro\\AppData\\Roaming\\Python\\Python314\\site-packages',
+ 'C:\\Python314\\Lib\\site-packages',
+ 'D:\\LOW\\low-3.17.9']
+pygame-ce 2.5.7 (SDL 2.32.10, Python 3.14.5)
+582 INFO: Appending 'datas' from .spec
+585 INFO: checking Analysis
+586 INFO: Building Analysis because Analysis-00.toc is non existent
+586 INFO: Looking for Python shared library...
+586 INFO: Using Python shared library: C:\Python314\python314.dll
+586 INFO: Running Analysis Analysis-00.toc
+586 INFO: Target bytecode optimization level: 0
+586 INFO: Initializing module dependency graph...
+587 INFO: Initializing module graph hook caches...
+602 INFO: Analyzing modules for base_library.zip ...
+1401 INFO: Processing standard module hook 'hook-encodings.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+2566 INFO: Processing standard module hook 'hook-math.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+4082 INFO: Processing standard module hook 'hook-difflib.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+4097 INFO: Processing standard module hook 'hook-heapq.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+4223 INFO: Processing standard module hook 'hook-pickle.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+5858 INFO: Caching module dependency graph...
+5890 INFO: Analyzing D:\LOW\low-3.17.9\main.py
+6365 INFO: Processing standard module hook 'hook-webbrowser.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+6426 INFO: Processing standard module hook 'hook-sysconfig.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+6432 INFO: Processing standard module hook 'hook-_ctypes.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+6447 INFO: Processing standard module hook 'hook-urllib3.py' from 'C:\\Python314\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+6613 INFO: Processing pre-safe-import-module hook 'hook-backports.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+6614 INFO: SetuptoolsInfo: initializing cached setuptools info...
+7073 INFO: Setuptools: 'backports' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.backports'!
+7081 INFO: Processing standard module hook 'hook-setuptools.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+7134 INFO: Processing standard module hook 'hook-platform.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+7137 INFO: Processing pre-safe-import-module hook 'hook-distutils.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+7174 INFO: Processing pre-safe-import-module hook 'hook-jaraco.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+7174 INFO: Setuptools: 'jaraco' appears to be a full setuptools-vendored copy - creating alias to 'setuptools._vendor.jaraco'!
+7187 INFO: Processing pre-safe-import-module hook 'hook-more_itertools.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+7187 INFO: Setuptools: 'more_itertools' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.more_itertools'!
+7357 INFO: Processing pre-safe-import-module hook 'hook-typing_extensions.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+7674 INFO: Processing standard module hook 'hook-multiprocessing.util.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+7784 INFO: Processing standard module hook 'hook-xml.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+8642 INFO: Processing pre-safe-import-module hook 'hook-packaging.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+8919 INFO: Processing standard module hook 'hook-setuptools._vendor.jaraco.text.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+8921 INFO: Processing pre-safe-import-module hook 'hook-importlib_resources.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+9432 INFO: Processing pre-safe-import-module hook 'hook-tomli.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+9432 INFO: Setuptools: 'tomli' appears to be a setuptools-vendored copy - creating alias to 'setuptools._vendor.tomli'!
+10094 INFO: Processing pre-safe-import-module hook 'hook-wheel.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+10604 INFO: Processing standard module hook 'hook-certifi.py' from 'C:\\Python314\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+10655 INFO: Processing standard module hook 'hook-charset_normalizer.py' from 'C:\\Python314\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+10887 INFO: Processing standard module hook 'hook-webview.py' from 'C:\\Users\\Mauro\\AppData\\Roaming\\Python\\Python314\\site-packages\\webview\\__pyinstaller'
+11452 INFO: Processing pre-safe-import-module hook 'hook-gi.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\pre_safe_import_module'
+11619 INFO: Processing standard module hook 'hook-clr.py' from 'C:\\Users\\Mauro\\AppData\\Roaming\\Python\\Python314\\site-packages\\pythonnet\\_pyinstaller'
+11676 INFO: Processing standard module hook 'hook-clr_loader.py' from 'C:\\Python314\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+11802 INFO: Processing standard module hook 'hook-pycparser.py' from 'C:\\Python314\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+13144 INFO: Processing standard module hook 'hook-xml.etree.cElementTree.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+13312 INFO: Processing standard module hook 'hook-PIL.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+13457 INFO: Processing standard module hook 'hook-PIL.Image.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+13772 INFO: Processing standard module hook 'hook-numpy.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+16441 INFO: Processing standard module hook 'hook-xml.dom.domreg.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+16917 INFO: Processing standard module hook 'hook-PIL.ImageFilter.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+17345 INFO: Processing standard module hook 'hook-cairosvg.py' from 'C:\\Python314\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+17380 INFO: Processing standard module hook 'hook-cairocffi.py' from 'C:\\Python314\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+17599 INFO: Processing standard module hook 'hook-tinycss2.py' from 'C:\\Python314\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+17933 INFO: Analyzing hidden import 'animation_engine'
+18010 INFO: Analyzing hidden import 'animation_engine.nodes'
+18038 INFO: Processing module hooks (post-graph stage)...
+18046 WARNING: Hidden import "pycparser.lextab" not found!
+18046 WARNING: Hidden import "pycparser.yacctab" not found!
+18046 INFO: Processing standard module hook 'hook-tinycss2.py' from 'C:\\Python314\\Lib\\site-packages\\_pyinstaller_hooks_contrib\\stdhooks'
+18409 INFO: Processing standard module hook 'hook-PIL.SpiderImagePlugin.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks'
+18529 INFO: Performing binary vs. data reclassification (206 entries)
+18593 INFO: Looking for ctypes DLLs
+18673 INFO: Analyzing run-time hooks ...
+18676 INFO: Including run-time hook 'pyi_rth_inspect.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+18679 INFO: Including run-time hook 'pyi_rth_pkgutil.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+18682 INFO: Including run-time hook 'pyi_rth_multiprocessing.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+18684 INFO: Including run-time hook 'pyi_rth_setuptools.py' from 'C:\\Python314\\Lib\\site-packages\\PyInstaller\\hooks\\rthooks'
+18701 INFO: Creating base_library.zip...
+18719 INFO: Looking for dynamic libraries
+19474 INFO: Extra DLL search directories (AddDllDirectory): ['C:\\Python314\\Lib\\site-packages\\numpy.libs']
+19474 INFO: Extra DLL search directories (PATH): []
+19961 WARNING: Library not found: could not resolve 'zlib1.dll', dependency of 'C:\\Program Files (x86)\\GTK2-Runtime\\bin\\libcairo-2.dll'.
+19961 WARNING: Library not found: could not resolve 'libfontconfig-1.dll', dependency of 'C:\\Program Files (x86)\\GTK2-Runtime\\bin\\libcairo-2.dll'.
+19961 WARNING: Library not found: could not resolve 'libpng14-14.dll', dependency of 'C:\\Program Files (x86)\\GTK2-Runtime\\bin\\libcairo-2.dll'.
+19961 WARNING: Library not found: could not resolve 'freetype6.dll', dependency of 'C:\\Program Files (x86)\\GTK2-Runtime\\bin\\libcairo-2.dll'.
+20009 INFO: Warnings written to D:\LOW\low-3.17.9\build\LOW\warn-LOW.txt
+20080 INFO: Graph cross-reference written to D:\LOW\low-3.17.9\build\LOW\xref-LOW.html
+20110 INFO: checking PYZ
+20110 INFO: Building PYZ because PYZ-00.toc is non existent
+20110 INFO: Building PYZ (ZlibArchive) D:\LOW\low-3.17.9\build\LOW\PYZ-00.pyz
+20588 INFO: Building PYZ (ZlibArchive) D:\LOW\low-3.17.9\build\LOW\PYZ-00.pyz completed successfully.
+20605 INFO: checking PKG
+20605 INFO: Building PKG because PKG-00.toc is non existent
+20606 INFO: Building PKG (CArchive) LOW.pkg
+23584 INFO: Building PKG (CArchive) LOW.pkg completed successfully.
+23590 INFO: Bootloader C:\Python314\Lib\site-packages\PyInstaller\bootloader\Windows-64bit-intel\runw.exe
+23590 INFO: checking EXE
+23590 INFO: Building EXE because EXE-00.toc is non existent
+23590 INFO: Building EXE from EXE-00.toc
+23593 INFO: Copying bootloader EXE to D:\LOW\low-3.17.9\dist\LOW.exe
+23645 INFO: Copying icon to EXE
+23697 INFO: Copying 0 resources to EXE
+23697 INFO: Embedding manifest in EXE
+23749 INFO: Appending PKG archive to EXE
+23816 INFO: Fixing EXE headers
+26873 INFO: Building EXE from EXE-00.toc completed successfully.
+26878 INFO: Build complete! The results are available in: D:\LOW\low-3.17.9\dist

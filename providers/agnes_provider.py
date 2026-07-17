@@ -1,9 +1,9 @@
-"""Agnes AI Provider — OpenAI-compatible (https://platform.agnes-ai.com)."""
+"""Agnes AI Provider — OpenAI-compatible (https://api.agnes-ai.com)."""
 from providers.base import OpenAICompatProvider
 
 
 class AgnesProvider(OpenAICompatProvider):
-    BASE_URL = "https://platform.agnes-ai.com/v1"
+    BASE_URL = "https://api.agnes-ai.com/api/v1"
     MODELS = ["gpt-4o", "claude-sonnet-4-5", "deepseek-v4-pro"]
 
     @staticmethod
