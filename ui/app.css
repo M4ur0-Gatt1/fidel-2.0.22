@@ -523,6 +523,13 @@ footer {
   font: 400 11px 'Figtree', sans-serif; color: var(--mut); text-transform: none;
 }
 .agrow .agchk input { width: auto; accent-color: var(--green); flex: none; }
+/* ⚙ → Redes Sociales: filas de conexión OAuth */
+.soc-row label { width: 170px; }
+.soc-row .soc-st {
+  flex: 1; font: 500 11.5px 'JetBrains Mono', monospace; color: var(--green);
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.soc-row button { flex: none; padding: 6px 12px; }
 .srv-row { display: flex; gap: 6px; margin-bottom: 6px; align-items: center; }
 .srv-row input {
   flex: 1; min-width: 0; background: var(--panel2); border: 1px solid var(--line);

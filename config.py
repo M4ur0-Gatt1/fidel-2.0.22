@@ -60,7 +60,7 @@ DEFAULT_CONFIG = {
     # [{"name": "yungas", "user": "root", "host": "1.2.3.4", "port": "", "key": ""}]
     "ssh_hosts": [],
     "providers": {
-        "deepseek": {"api_key": "", "model": "deepseek-v4-pro", "base_url": ""},
+        "deepseek": {"api_key": "", "model": "deepseek-chat", "base_url": ""},
         "nvidia": {"api_key": "", "model": "meta/llama-3.3-70b-instruct", "base_url": ""},
         "groq": {"api_key": "", "model": "llama-3.3-70b-versatile", "base_url": ""},
         "siliconflow": {"api_key": "", "model": "deepseek-ai/DeepSeek-V3", "base_url": ""},

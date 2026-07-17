@@ -42,7 +42,7 @@ ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-LOW_VERSION = "3.18.3"
+LOW_VERSION = "3.18.4"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -565,6 +565,8 @@ class Api:
             "ssh_hosts": s.cfg.data.get("ssh_hosts", []),
             "lessons": len(s._load_lessons()),
             "skills": len(s._load_skills()),
+            # cadena de failover: para que la UI muestre el orden y el modelo de respaldo
+            "chain": [{"provider": p, "model": m} for p, m in s._chain()],
         }
         st.update(s._apis_state())
         return st
@@ -1176,16 +1178,28 @@ class Api:
         s.cfg.save()
 
     def set_provider(s, name):
+        name = name.replace(" (media)", "")  # por si viene con el sufijo de la UI
         s.cfg.set_active_provider(name)
         s._initp()
-        r = {"model": s.cfg.get_model(name) or (s.prov.model if s.prov else ""),
-             "models": s._models(name)}
+        active = s.cfg.get_active_provider()
+        r = {"provider": active,
+             "model": s.cfg.get_model(active) or (s.prov.model if s.prov else ""),
+             "models": s._models(active),
+             "chain": [{"provider": p, "model": m} for p, m in s._chain()]}
         r.update(s._apis_state())
         return r
 
     def set_model(s, model):
         s.cfg.set_model(s.cfg.get_active_provider(), model.strip())
         s._initp()
+
+    def save_failover_order(s, order):
+        """Guarda el orden de prioridad de providers para failover (⚙)."""
+        if isinstance(order, list) and order:
+            s.cfg.data["failover_order"] = order
+            s.cfg.save()
+        return {"failover_order": s.cfg.data.get("failover_order", []),
+                "chain": [{"provider": p, "model": m} for p, m in s._chain()]}
 
     def save_keys(s, keys):
         for p, v in (keys or {}).items():
@@ -1403,12 +1417,17 @@ class Api:
     def _chain(s):
         """Cadena de failover: (proveedor, modelo). El activo usa el modelo que
         eligió el usuario; los de respaldo usan su modelo RÁPIDO conocido. Termina
-        en Ollama local (custom) que no tiene límites de cupo → siempre responde."""
+        en Ollama local (custom) que no tiene límites de cupo → siempre responde.
+        
+        El orden de prioridad se puede configurar en ⚙ → failover_order. Si no,
+        usa el orden por defecto (deepseek → siliconflow → nvidia → ... → custom)."""
         provs = s.cfg.data.get("providers", {})
         active = s.cfg.get_active_provider()
-        # Prioridad: deepseek, siliconflow, nvidia, groq, openai, anthropic, …, custom
-        pref = ["deepseek", "siliconflow", "nvidia", "groq", "openai",
-                "anthropic", "qwen", "glm", "xai", "digitalocean", "custom"]
+        # Orden configurable por el usuario (⚙); si no, el default histórico
+        pref = s.cfg.data.get("failover_order") or [
+            "deepseek", "siliconflow", "nvidia", "groq", "openai",
+            "anthropic", "qwen", "glm", "xai", "digitalocean", "agnes",
+            "aimlapi", "custom"]
         rest = sorted((p for p in provs if p != active and p not in s.MEDIA_ONLY),
                       key=lambda p: pref.index(p) if p in pref else 99)
         # ¿Ollama está realmente corriendo? Si NO, no lo metemos como respaldo:
@@ -1600,6 +1619,82 @@ class Api:
         s.cfg.save()
         return {"ssh_hosts": clean}
 
+    # ── redes sociales (módulo social/) ────────────────────────────
+    # La autorización SIEMPRE se hace desde acá (⚙ → Redes Sociales): LOW abre
+    # el navegador y recibe el token por callback local. Tokens cifrados (DPAPI).
+    def _social(s):
+        import social.service as svc
+        if not getattr(s, "_social_sched", False):
+            s._social_sched = True
+            try:
+                svc.start_scheduler(s._social_ask,
+                                    lambda m: s._push("sys", m))
+            except Exception as e:
+                log(f"social scheduler: {e}")
+        return svc
+
+    def _social_ask(s, system, user):
+        """LLM one-shot para el validador de marca: usa la cadena de failover."""
+        for name, model in s._chain():
+            try:
+                p = s._mk_provider(name, model)
+                r = p.chat([{"role": "user", "content": user}],
+                           system_prompt=system, temperature=0.2, max_tokens=1500)
+                if r.content:
+                    return r.content
+            except Exception:
+                continue
+        raise RuntimeError("ningún proveedor de IA respondió — configurá una "
+                           "API key en ⚙")
+
+    def social_state(s):
+        try:
+            return s._social().state()
+        except Exception as e:
+            return {"error": str(e)[:300], "platforms": []}
+
+    def social_connect(s, platform, client_id="", client_secret=""):
+        """Corre el OAuth desde LOW (bloquea hasta que el usuario autoriza en
+        el navegador). client_id/secret = la app del usuario en esa plataforma."""
+        try:
+            return s._social().connect(platform, client_id or "", client_secret or "")
+        except Exception as e:
+            return {"error": str(e)[:300]}
+
+    def social_disconnect(s, platform):
+        try:
+            s._social().disconnect(platform)
+            return {"ok": True}
+        except Exception as e:
+            return {"error": str(e)[:300]}
+
+    def social_save_brand(s, profile_json):
+        try:
+            return {"ok": True, "profile": s._social().save_brand(profile_json)}
+        except Exception as e:
+            return {"error": str(e)[:300]}
+
+    def social_save_brand_guide(s, text):
+        try:
+            s._social().set_brand_guide(text or "")
+            return {"ok": True}
+        except Exception as e:
+            return {"error": str(e)[:300]}
+
+    def social_sync_templates(s):
+        try:
+            return {"ok": True, "templates": s._social().sync_templates()}
+        except Exception as e:
+            return {"error": str(e)[:300]}
+
+    def social_publish_now(s, qid):
+        try:
+            svc = s._social()
+            return {"msg": svc.process_item(int(qid), s._social_ask,
+                                            lambda m: s._push("sys", m))}
+        except Exception as e:
+            return {"error": str(e)[:300]}
+
     # ── sistema de automejora ──
     def get_diagnostic_report(s):
         """Genera un reporte de diagnóstico del sistema."""
@@ -1664,6 +1759,8 @@ class Api:
             {"type": "function", "function": {"name": "edit_image", "description": "EDITA una imagen existente (png/jpg/webp) con IA según un pedido en lenguaje natural (ej: 'cambiá el fondo a azul', 'sacale el texto', 'convertila en acuarela'). Guarda una VERSIÓN nueva al lado (no pisa la original). Requiere key de SiliconFlow.", "parameters": {"type": "object", "properties": {"path": {"type": "string", "description": "ruta a la imagen a editar"}, "prompt": {"type": "string", "description": "qué cambiar, concreto"}}, "required": ["path", "prompt"]}}},
             {"type": "function", "function": {"name": "animate_image", "description": "ANIMA una imagen existente (png/jpg): imagen→video que MANTIENE el estilo del cuadro. Usa LTX-2.3 si hay key (rápido, CON audio generado, hasta 20s) y si no Wan 2.2 en SiliconFlow (~5s, 2-4 min). Ideal para storyboard/animatic: describí el movimiento ('zoom lento hacia la cara', 'las hojas se mueven con el viento', 'la cámara recorre de izquierda a derecha'). Guarda un .mp4 al lado.", "parameters": {"type": "object", "properties": {"image": {"type": "string", "description": "ruta a la imagen a animar"}, "prompt": {"type": "string", "description": "qué movimiento/acción debe tener"}}, "required": ["image", "prompt"]}}},
             {"type": "function", "function": {"name": "generate_video", "description": "Genera un VIDEO desde una descripción de texto. Usa LTX-2.3 si hay key (rápido, CON audio, hasta 20s) y si no Wan 2.2 T2V (~5s, 2-4 min). Para mantener estilo entre planos de un storyboard preferí animate_image sobre un cuadro ya diseñado. Guarda un .mp4.", "parameters": {"type": "object", "properties": {"prompt": {"type": "string", "description": "escena, estilo y movimiento de cámara"}, "path": {"type": "string", "description": "ruta destino, ej video/plano01.mp4 (opcional)"}}, "required": ["prompt"]}}},
+            {"type": "function", "function": {"name": "social_publish", "description": "PUBLICA (o programa) contenido en una red social conectada (⚙ → Redes Sociales): instagram, facebook, linkedin, x, tiktok. LOW valida el copy contra la IDENTIDAD DE MARCA cargada (tono, palabras prohibidas, hashtags) ANTES de publicar — si la viola de forma no corregible, se rechaza. La pieza gráfica sale de: un template de Canva ('template_id' + el copy, LOW rellena y exporta), o una imagen/video local del workspace ('asset'). 'schedule_at' (YYYY-MM-DD HH:MM, hora local) la programa; sin schedule_at publica YA. Antes de usarla podés ver qué hay conectado con social_status.", "parameters": {"type": "object", "properties": {"network": {"type": "string", "description": "instagram | facebook | linkedin | x | tiktok"}, "content": {"type": "string", "description": "el copy/idea del post — LOW lo valida y adapta a la marca y a los límites de la red"}, "template_id": {"type": "string", "description": "ID de un Brand Template de Canva (ver social_status) para generar la gráfica"}, "asset": {"type": "string", "description": "ruta a imagen/video del workspace si no usás template de Canva"}, "schedule_at": {"type": "string", "description": "cuándo publicar, 'YYYY-MM-DD HH:MM' (opcional; vacío = ahora)"}}, "required": ["network", "content"]}}},
+            {"type": "function", "function": {"name": "social_status", "description": "Muestra el estado del módulo de redes: cuentas conectadas, templates de Canva disponibles (con sus placeholders), identidad de marca cargada y la cola de publicaciones (pendientes/publicadas/fallidas). Usala antes de social_publish.", "parameters": {"type": "object", "properties": {}}}},
             {"type": "function", "function": {"name": "web_search", "description": "Busca en internet (DuckDuckGo, sin API key) y devuelve los primeros resultados con título, URL y resumen. Usalo para info actual, documentación, precios, noticias, etc. Después podés leer una URL con web_fetch.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
             {"type": "function", "function": {"name": "web_fetch", "description": "Descarga una URL y devuelve su texto legible (quita HTML/scripts). Usalo para LEER una página, doc o API pública. Devuelve hasta ~8000 caracteres.", "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
             {"type": "function", "function": {"name": "ask_model", "description": "Delega una SUBTAREA a OTRO modelo para AHORRAR recursos: mandá lo simple/mecánico a uno barato o rápido y reservá el modelo actual (caro) para lo complejo. Devuelve la respuesta de ese modelo como texto para que la uses. 'provider' = uno de los configurados con key (ej. groq, digitalocean, siliconflow, deepseek, glm, qwen, nvidia, custom). 'model' opcional (default: el rápido del proveedor). Ideal para: resumir, traducir, reformatear, generar texto trivial, clasificar, listar ideas, boilerplate. NO delegues tareas que necesiten tus herramientas (archivos, git, imagenes). Podés hacer varias ask_model en paralelo mental para comparar respuestas.", "parameters": {"type": "object", "properties": {"provider": {"type": "string", "description": "proveedor destino (con key configurada)"}, "prompt": {"type": "string", "description": "la subtarea, autocontenida (incluí todo el contexto que el otro modelo necesita)"}, "model": {"type": "string", "description": "modelo especifico del proveedor (opcional)"}}, "required": ["provider", "prompt"]}}},
@@ -1676,7 +1773,7 @@ class Api:
     # tool gating las omite en sesiones 'code' y las incluye en 'design'.
     _MEDIA_TOOLS = {"generate_image", "refine_image", "edit_image", "animate_image",
                     "generate_video", "social_export", "save_character", "check_design",
-                    "anim", "vectorize", "illustrate"}
+                    "anim", "vectorize", "illustrate", "social_publish", "social_status"}
     _DESIGN_RE = re.compile(r"imagen|dibuj|logo|ilustr|dise[ñn]|foto|render|v[ií]deo|video|"
                             r"anima|storyboard|personaje|banner|flyer|afiche|p[oó]ster|"
                             r"social|thumbnail|\bsvg\b|[ií]cono", re.I)
@@ -2067,6 +2164,48 @@ class Api:
                 s._written.append(out)
                 s._push("sys", f"📄 Documento Word creado: {rel}")
                 return f"✅ Documento .docx creado: {rel} (se abre con Word/LibreOffice)"
+            if name == "social_publish":
+                try:
+                    svc = s._social()
+                    asset = (args.get("asset") or "").strip()
+                    if asset:
+                        p = Path(asset) if os.path.isabs(asset) else s._base() / asset
+                        if not p.exists():
+                            return f"❌ No existe el asset: {asset}"
+                        asset = str(p)
+                    qid = svc.enqueue(args.get("network", ""),
+                                      args.get("content", ""),
+                                      template_id=args.get("template_id", "") or "",
+                                      asset_path=asset,
+                                      scheduled_at=(args.get("schedule_at") or "").strip())
+                    if (args.get("schedule_at") or "").strip():
+                        return (f"✅ Programado #{qid} para {args['schedule_at']} en "
+                                f"{args.get('network')}. LOW lo valida contra la marca "
+                                "y lo publica solo (autopiloto).")
+                    return svc.process_item(qid, s._social_ask,
+                                            lambda m: s._push("sys", m))
+                except Exception as e:
+                    return f"❌ social_publish: {str(e)[:300]}"
+            if name == "social_status":
+                try:
+                    st = s._social().state()
+                    conn = [f"{p['label']}: {p['handle'] or '✔'}"
+                            for p in st["platforms"] if p["connected"]]
+                    lines = ["Cuentas conectadas: " + (", ".join(conn) or
+                             "NINGUNA — el usuario debe conectarlas en ⚙ → Redes Sociales")]
+                    if st.get("templates"):
+                        lines.append("Templates de Canva: " + "; ".join(
+                            f"{t['name']} (id {t['id']})" for t in st["templates"][:15]))
+                    b = st.get("brand") or {}
+                    lines.append("Marca: " + (f"tono='{b.get('tone', '')[:80]}', "
+                                 f"{len(b.get('banned', []))} palabras prohibidas"
+                                 if b.get("tone") else "SIN CARGAR (⚙ → Redes Sociales)"))
+                    for q_ in st.get("queue", [])[:10]:
+                        lines.append(f"  cola #{q_['id']} {q_['network']} "
+                                     f"[{q_['status']}] {q_.get('error') or ''}")
+                    return "\n".join(lines)
+                except Exception as e:
+                    return f"❌ social_status: {str(e)[:300]}"
             if name == "web_search":
                 return s._web_search(args.get("query") or args.get("q") or "")
             if name == "web_fetch":

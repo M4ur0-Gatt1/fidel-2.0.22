@@ -31,6 +31,12 @@ DEFAULT_CONFIG = {
     "active_provider": "deepseek",
     "theme": "dark",
     "font_size": 12,
+    # Orden de failover: si el provider activo falla, LOW va probando estos en orden.
+    # Solo se usan los que tienen API key cargada. Si no se configura, usa el orden
+    # por defecto (deepseek → siliconflow → nvidia → groq → openai → ... → custom).
+    "failover_order": ["deepseek", "siliconflow", "nvidia", "groq", "openai",
+                       "anthropic", "qwen", "glm", "xai", "digitalocean", "agnes",
+                       "aimlapi", "custom"],
     # límites del agente — ajustables desde ⚙. La idea de LOW es NO ponerle
     # techos al trabajo salvo los que impone la API/costo. Subilos si querés
     # que insista más en tareas grandes; el único freno duro es que deje de
@@ -54,7 +60,7 @@ DEFAULT_CONFIG = {
     # [{"name": "yungas", "user": "root", "host": "1.2.3.4", "port": "", "key": ""}]
     "ssh_hosts": [],
     "providers": {
-        "deepseek": {"api_key": "", "model": "deepseek-v4-pro", "base_url": ""},
+        "deepseek": {"api_key": "", "model": "deepseek-chat", "base_url": ""},
         "nvidia": {"api_key": "", "model": "meta/llama-3.3-70b-instruct", "base_url": ""},
         "groq": {"api_key": "", "model": "llama-3.3-70b-versatile", "base_url": ""},
         "siliconflow": {"api_key": "", "model": "deepseek-ai/DeepSeek-V3", "base_url": ""},
@@ -73,15 +79,6 @@ DEFAULT_CONFIG = {
         # Key: token personal de DO o model access key
         #      (https://cloud.digitalocean.com/gen-ai/model-access-keys)
         "digitalocean": {"api_key": "", "model": "deepseek-v4-pro", "base_url": "https://inference.do-ai.run/v1"},
-        # Cloudflare Workers AI — 10,000 Neurons por día gratis.
-        # Endpoint: https://api.cloudflare.com/client/v4/accounts/{account_id}/ai/run
-        # Key: API Token de Cloudflare (https://dash.cloudflare.com/profile/api-tokens)
-        #      Requiere account_id en base_url o como parámetro
-        "cloudflare": {"api_key": "", "model": "@cf/meta/llama-3.3-70b-instruct-fp8-fast", "base_url": ""},
-        # Replicate — miles de modelos open-source con free tier de $0.005.
-        # Endpoint: https://api.replicate.com/v1
-        # Key: API Token de Replicate (https://replicate.com/account/api-tokens)
-        "replicate": {"api_key": "", "model": "meta/meta-llama-3-70b-instruct", "base_url": ""},
         # LTX (Lightricks) — SOLO video (text→video / imagen→video con audio).
         # No es un modelo de chat: no entra en la cadena de failover del agente.
         # Key: https://console.ltx.video/api-keys

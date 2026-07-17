@@ -383,6 +383,13 @@ function updChainBadge() {
   $("#provDot").classList.toggle("warn", !activeOk && chain.length > 0);
 }
 
+function updateChatHeader() {
+  // Actualiza el encabezado de quién responde en la UI (barra superior)
+  const prov = $("#selProv").value || "";
+  const model = $("#selModel").value || "";
+  $("#agBadge").textContent = prov && model ? prov + " · " + model : "sin key";
+}
+
 function fillSelect(sel, values, cur) {
   sel.innerHTML = "";
   if (!values || !Array.isArray(values)) {
@@ -406,21 +413,20 @@ function bind() {
   };
   $("#selProv").onchange = async () => {
     const name = providerName($("#selProv").value);
-    const r = await api.set_provider(name);
-    fillSelect($("#selModel"), r.models, r.model);
-    updApis(r);
-  };
-  $("#selModel").onchange = () => api.set_model($("#selModel").value);
-  $("#selProv").onchange = async () => {
-    const name = providerName($("#selProv").value);
     const st = await api.set_provider(name);
     if (st) {
       fillSelect($("#selModel"), st.models || [], st.model);
-      S.providers = st.providers;
+      S.providers = st.providers || [];
       S.chain = st.chain || [];
       updApis(st);
       updChainBadge();
+      // Reflejar el cambio en el encabezado del chat
+      updateChatHeader();
     }
+  };
+  $("#selModel").onchange = () => {
+    api.set_model($("#selModel").value);
+    updateChatHeader();
   };
   $("#btnModelSearch").onclick = modalModelSearch;
   $("#abDesign").onclick = designEntry;
@@ -1231,7 +1237,7 @@ function agentMsg(text) {
   h.innerHTML = '<div class="m-ava">★</div>';
   const who = document.createElement("span");
   who.className = "m-who";
-  who.textContent = "LOW · " + $("#selModel").value;
+  who.textContent = "LOW · " + ($("#selProv").value || "?") + " · " + ($("#selModel").value || "?");
   h.appendChild(who);
   const b = document.createElement("div");
   b.className = "m-txt"; b.textContent = text;
@@ -1726,11 +1732,25 @@ function modalKeys() {
       <label class="agchk"><input id="agVerify" type="checkbox"> corre el código y, si falla en runtime, pide corrección (no solo que compile)</label></div>
     <div class="agrow"><label>Revisar diseño (SVG)</label>
       <label class="agchk"><input id="agDesign" type="checkbox"> rasteriza el SVG y lo revisa con visión para que no dibuje a ciegas</label></div>
+    <h2 style="margin-top:16px">Redes Sociales</h2>
+    <div class="sub">Conectá tus cuentas DESDE ACÁ: al tocar Conectar se abre tu
+    navegador, autorizás en la plataforma y el permiso vuelve solo a LOW por un
+    callback local — los tokens quedan cifrados en tu máquina. Necesitás una app
+    propia en cada plataforma (Canva Developers, Meta for Developers, LinkedIn
+    Developers, X Developer Portal, TikTok Developers) con esta Redirect URI
+    registrada: <b id="socRedir">…</b></div>
+    <div id="socRows" class="sub">Cargando…</div>
+    <h2 style="margin-top:16px">Identidad de marca</h2>
+    <div class="sub">Brand Profile compacto (JSON): tono, palabras prohibidas
+    (banned), hashtags (tags), paleta, fuentes, CTAs. El agente valida TODO lo
+    que publica contra esto — se guarda con el botón Guardar de abajo.</div>
+    <textarea id="brandJson" class="cmp-field" rows="6" spellcheck="false"></textarea>
     <div class="m-actions">
       <button class="ghost" id="mCancel">Cancelar</button>
       <button class="primary" id="mSave">Guardar</button>
     </div>`);
   api.config_path().then(p => { $("#cfgPath").textContent = "Se guardan en " + p; });
+  renderSocialCfg(true);
   $("#sysP").value = S.sysPrompt || "";
   $("#sysP").placeholder = S.defaultSp || "";
   $("#agSteps").value = S.agent.max_steps ?? 40;
@@ -1744,6 +1764,16 @@ function modalKeys() {
     document.querySelectorAll('#modal input[type="password"]').forEach(i => { keys[i.dataset.p] = i.value.trim(); });
     S.sysPrompt = $("#sysP").value.trim();
     await api.save_system_prompt(S.sysPrompt);
+    const bj = $("#brandJson").value.trim();
+    if (bj) {
+      try {
+        JSON.parse(bj);           // valida antes de mandar
+        const rb = await api.social_save_brand(bj);
+        if (rb && rb.error) sysMsg("⚠ Marca: " + rb.error);
+      } catch (e) {
+        sysMsg("⚠ El Brand Profile no es JSON válido — no se guardó (" + e.message + ")");
+      }
+    }
     S.agent = await api.save_agent_config($("#agSteps").value, $("#agConts").value, $("#agMem").value, $("#agVerify").checked, $("#agDesign").checked);
     const st = await api.save_keys(keys);
     S.providers = st.providers;
@@ -1757,6 +1787,46 @@ function modalKeys() {
     closeModal();
     sysMsg("✅ Configuración guardada");
   };
+}
+
+/* ── ⚙ → Redes Sociales: conexiones OAuth desde LOW ── */
+async function renderSocialCfg(firstLoad) {
+  const st = await api.social_state();
+  if (!$("#socRows")) return;                       // el modal ya se cerró
+  if (st && st.error) { $("#socRows").textContent = "⚠ " + st.error; return; }
+  $("#socRedir").textContent = st.redirect_uri || "";
+  $("#socRows").innerHTML = (st.platforms || []).map(p => p.connected
+    ? `<div class="krow soc-row" data-k="${p.key}"><label>${p.label}</label>
+         <span class="soc-st" title="${esc(p.handle || "")}">● ${esc(p.handle || "conectado")}</span>
+         <button class="ghost soc-off" data-k="${p.key}">Desconectar</button></div>`
+    : `<div class="krow soc-row" data-k="${p.key}"><label>${p.label}</label>
+         <input class="soc-id" placeholder="Client ID${p.has_app ? " (ya guardado)" : ""}" spellcheck="false">
+         <input class="soc-sec" type="password" placeholder="Client Secret (si tu app usa)" spellcheck="false">
+         <button class="primary soc-on" data-k="${p.key}">Conectar</button></div>`
+  ).join("") || "Módulo social no disponible.";
+  document.querySelectorAll("#socRows .soc-on").forEach(b => b.onclick = async () => {
+    const row = b.closest(".soc-row");
+    b.disabled = true; b.textContent = "Autorizá en el navegador…";
+    const r = await api.social_connect(b.dataset.k,
+      row.querySelector(".soc-id").value.trim(),
+      row.querySelector(".soc-sec").value.trim());
+    if (r && r.error) {
+      sysMsg("❌ " + b.dataset.k + ": " + r.error);
+      b.disabled = false; b.textContent = "Conectar";
+    } else {
+      sysMsg("✅ Cuenta conectada" + (r.handle ? ": " + r.handle : "") +
+             (r.warning ? " · ⚠ " + r.warning : ""));
+      renderSocialCfg(false);
+    }
+  });
+  document.querySelectorAll("#socRows .soc-off").forEach(b => b.onclick = async () => {
+    await api.social_disconnect(b.dataset.k);
+    sysMsg("Cuenta de " + b.dataset.k + " desconectada (token eliminado)");
+    renderSocialCfg(false);
+  });
+  // el brand solo se carga al abrir, para no pisar lo que el usuario esté editando
+  if (firstLoad && $("#brandJson"))
+    $("#brandJson").value = JSON.stringify(st.brand || {}, null, 2);
 }
 
 function openModal(html) { $("#modal").innerHTML = html; $("#overlay").hidden = false; }
