@@ -4094,6 +4094,11 @@ class Api:
 
 def main():
     log("── arranque ──")
+    
+    # Forzar Qt para evitar errores de .NET en Windows
+    import os
+    os.environ["PYWEBVIEW_GUI"] = "qt"
+    
     api = Api()
     base = getattr(sys, "_MEIPASS", os.path.dirname(os.path.abspath(__file__)))
     ui = os.path.join(base, "ui", "index.html")
