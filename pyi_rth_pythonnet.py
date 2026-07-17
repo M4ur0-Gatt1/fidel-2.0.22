@@ -41,15 +41,14 @@ def _find_dotnet_core():
     return candidates[0] if candidates else None
 
 
-dotnet_root = _find_dotnet_core()
+# FORZAMOS netfx SIEMPRE en Windows (NO coreclr).
+# .NET Framework 4.x viene preinstalado en Windows 10/11 y NO necesita:
+#   - DOTNET_ROOT
+#   - cffi / clr_loader.ffi (que es frágil de empaquetar con PyInstaller)
+#   - .NET Core SDK instalado en la máquina del usuario
+# coreclr requiere cffi + hostfxr y falla en muchas PCs limpias.
+os.environ["PYTHONNET_RUNTIME"] = "netfx"
 
-if dotnet_root:
-    # .NET Core encontrado → lo usamos
-    os.environ["DOTNET_ROOT"] = dotnet_root
-    os.environ["PYTHONNET_RUNTIME"] = "coreclr"
-else:
-    # Sin .NET Core → pythonnet usará netfx (el .NET Framework nativo de Windows).
-    # No seteamos nada; pythonnet lo detecta automáticamente.
-    # Solo advertimos si PYTHONNET_RUNTIME estaba forzado a coreclr sin DOTNET_ROOT.
-    if os.environ.get("PYTHONNET_RUNTIME") == "coreclr":
-        del os.environ["PYTHONNET_RUNTIME"]
+# Si por algún motivo el sistema tenía DOTNET_ROOT, lo limpiamos
+# para que pythonnet no intente coreclr por error.
+os.environ.pop("DOTNET_ROOT", None)

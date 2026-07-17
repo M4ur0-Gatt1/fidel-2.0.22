@@ -24,7 +24,7 @@ a = Analysis(
                    'tools.animation.ai_pipeline', 'vtracer',
                    # pythonnet → clr_loader → cffi (necesario para .NET runtime)
                    'cffi', 'clr_loader', 'clr_loader.hostfxr', 'clr_loader.ffi'],
-    hookspath=[],
+    hookspath=['.'],
     hooksconfig={},
     runtime_hooks=['pyi_rth_pythonnet.py'],
     excludes=[
