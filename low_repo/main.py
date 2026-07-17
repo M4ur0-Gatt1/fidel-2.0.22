@@ -42,7 +42,7 @@ ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-LOW_VERSION = "3.18.1"
+LOW_VERSION = "3.18.3"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -51,7 +51,7 @@ DEFAULT_EXPECTED = "2, 3, 5, 7, 11, 13, 17, 19, 23, 29"
 
 # System prompt por defecto del agente. Editable desde ⚙ — LOW no agrega
 # ningún filtro ni instrucción oculta más allá de esto.
-DEFAULT_SP = ("Eres LOW, agente creativo y programador senior orientado a programación, diseño, video y animación. Tienes HERRAMIENTAS: read_file, "
+DEFAULT_SP = ("Estás corriendo en LOW v" + LOW_VERSION + ". Eres LOW, agente creativo y programador senior orientado a programación, diseño, video y animación. Tienes HERRAMIENTAS: read_file, "
               "write_file, edit_file, exec_cmd, run_code, list_files, search_code, "
               "git, ssh_exec, scp_upload, generate_image, remember, check_design, social_export, "
               "web_search, web_fetch, write_doc, edit_image, refine_image, animate_image, generate_video. "
