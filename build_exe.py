@@ -24,6 +24,13 @@ MODE = sys.argv[1] if len(sys.argv) > 1 else "fast"
 if not os.path.exists("low.ico"):
     subprocess.check_call([sys.executable, "make_icon.py"])
 
+# 1b. runtime hook de pythonnet (necesario para WebView2 en .exe)
+if not os.path.exists("pyi_rth_pythonnet.py"):
+    raise FileNotFoundError(
+        "Falta pyi_rth_pythonnet.py — runtime hook para pythonnet/.NET.\n"
+        "Sin esto el .exe falla con: Failed to create a .NET runtime (coreclr).\n"
+        "Creá el archivo o recuperalo de la release v3.18.4+ en GitHub.")
+
 # 2. PyInstaller (solo instalar si falta)
 try:
     import PyInstaller

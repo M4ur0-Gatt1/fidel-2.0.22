@@ -7,7 +7,8 @@ a = Analysis(
     binaries=[],
 datas=[('providers', 'providers'), ('code_runner', 'code_runner'), ('config.py', '.'),
        ('low.ico', '.'), ('ui', 'ui'), ('tools', 'tools'), ('low_anim.py', '.'),
-       ('self_improvement.py', '.'), ('animation_engine', 'animation_engine')],
+       ('self_improvement.py', '.'), ('animation_engine', 'animation_engine'),
+       ('social', 'social')],
     hiddenimports=['providers', 'providers.transport', 'providers.nvidia_provider',
                    'code_runner', 'webview.platforms.winforms',
                    'webview.platforms.edgechromium', 'webview.platforms.cocoa',
@@ -22,7 +23,7 @@ datas=[('providers', 'providers'), ('code_runner', 'code_runner'), ('config.py',
                    'tools.animation.ai_pipeline', 'vtracer'],
     hookspath=[],
     hooksconfig={},
-    runtime_hooks=[],
+    runtime_hooks=['pyi_rth_pythonnet.py'],
     excludes=[
         # Modulos pesados que LOW no usa -> build mas rapido
         'matplotlib', 'numpy', 'scipy', 'pandas',
