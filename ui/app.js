@@ -1645,7 +1645,9 @@ function clearAgentLines() {
 
 /* ── diff lado a lado (antes / después) ── */
 function esc(s) {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+  // escapa también comillas: esc() se usa dentro de atributos title="…"
+  return String(s == null ? "" : s).replace(/&/g, "&amp;").replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 }
 function showDiff(oldTxt, newTxt, name) {
   // LCS por líneas para marcar agregados/borrados/iguales
