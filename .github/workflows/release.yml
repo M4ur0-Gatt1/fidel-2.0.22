@@ -5,6 +5,11 @@ on:
     tags:
       - 'v*'
 
+# el GITHUB_TOKEN necesita escritura para crear/actualizar la release y subir
+# los binarios (sin esto: "Resource not accessible by integration")
+permissions:
+  contents: write
+
 jobs:
   # ── Windows ──
   windows:
@@ -32,7 +37,7 @@ jobs:
           $ver = "${{ github.ref_name }}".TrimStart('v')
           echo "VERSION=$ver" >> $env:GITHUB_OUTPUT
           & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" /DAppVersion=$ver low_installer.iss
-        id: ver2
+        id: ver
         shell: pwsh
 
       - name: Upload LOW.exe
