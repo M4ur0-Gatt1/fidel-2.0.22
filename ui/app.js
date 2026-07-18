@@ -682,6 +682,7 @@ $("#dzDiscBtn").onclick = () => dzDiscToggle();
   });
   // 🎭 diorama: toggle, cerrar y arrastre del panel
   $("#dzZBtn").onclick = dzZPanelToggle;
+  $("#dz3DBtn").onclick = dz3dToggle;
   $("#dzZpClose").onclick = () => { $("#dzZPanel").hidden = true; $("#dzZBtn").classList.remove("active"); };
   $("#dzZpHead").addEventListener("mousedown", (e) => {
     if (e.target.id === "dzZpClose") return;
@@ -2084,9 +2085,10 @@ async function openDesign(path) {
   $("#dzHandle").hidden = true;
   $("#dzCode").hidden = true;
   dzBuildLayers();
+  if (DZ.d3) dz3dBuild();       // en espacio 3D: reconstruir los planos del cuadro nuevo
   $("#designView").hidden = false;
 }
-function closeDesign() { dzPersist(); $("#designView").hidden = true; DZ.sel = null; if (RULER) dzRulerClear(); }
+function closeDesign() { dzPersist(); if (DZ.d3) dz3dExit(true); $("#designView").hidden = true; DZ.sel = null; if (RULER) dzRulerClear(); }
 
 /* zoom del lienzo (no altera el SVG, solo la vista) */
 function dzApplyZoom() {
@@ -5952,6 +5954,305 @@ function dzAnimStop() {
 }
 
 /* ── panel de capas: lista de elementos, reordenar (z), mostrar/ocultar ── */
+/* ══ ESPACIO 3D: visor tipo Blender para el multiplano ══════════════════════
+   Cada capa (elemento de primer nivel del svg) es un PLANO flotando en
+   profundidad — el mismo data-z del diorama y del export con parallax, ahora
+   navegable: orbitás la escena, activás un plano y dibujás 2D sobre él
+   (grease pencil de Blender). El truco que lo hace posible sin librerías:
+   el browser proyecta solo los pointer events sobre elementos con CSS 3D,
+   así que offsetX/offsetY llegan en coordenadas LOCALES del plano rotado. */
+const DZ3D_DEPTH = 1.2;               // px de translateZ por unidad de data-z
+const DZ3D_VIEWS = { persp: [-18, 28], front: [0, 0], top: [-89.9, 0], side: [0, 89.9] };
+
+function dz3dToggle() {
+  if (DZ.d3) return dz3dExit();
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (!svg) return sysMsg("Abrí un diseño primero");
+  DZ.d3 = { rx: -18, ry: 28, zoom: 0.65, panX: 0, panY: 30, act: -1, els: [] };
+  $("#dz3DBtn").classList.add("active");
+  dz3dBuild();
+  dzSetStatus("Espacio 3D — arrastrá: orbitar · Shift: panear · rueda: zoom · " +
+    "clic en un plano lo activa · lápiz/pincel dibujan sobre el plano activo · Z con el slider");
+}
+
+function dz3dKids(svg) {
+  return [...svg.children].filter(n => !DZ_SKIP_TAGS.includes(n.tagName.toLowerCase())
+    && !(n.classList && (n.classList.contains("dz-onion") || n.classList.contains("dz-penui"))));
+}
+
+function dz3dBuild() {
+  const cv = $("#dzCanvas");
+  const svg = cv.querySelector("svg");
+  if (!svg || !DZ.d3) return;
+  const old = $("#dz3dStage"); if (old) old.remove();
+  svg.style.visibility = "hidden";
+  $("#dzHandle").hidden = true; $("#dzRotate").hidden = true;
+
+  // lienzo vacío: crear un plano base para que se pueda dibujar ya
+  if (!dz3dKids(svg).length) {
+    const g = document.createElementNS(SVGNS, "g");
+    g.setAttribute("data-low", "plano");
+    svg.appendChild(g);
+  }
+  const vb = (svg.getAttribute("viewBox") || "0 0 1080 1080").split(/\s+/).map(Number);
+  const W = vb[2] || 1080, H = vb[3] || 1080;
+  const G = Math.max(W, H) * 1.6;                       // tamaño del piso/ejes
+
+  const stage = document.createElement("div");
+  stage.id = "dz3dStage";
+  stage.innerHTML = `
+    <div class="dz3d-world" id="dz3dWorld">
+      <div class="dz3d-grid" style="width:${G}px;height:${G}px;margin-left:${-G / 2}px;margin-top:${-G / 2}px;transform:translateY(${H / 2}px) rotateX(90deg)"></div>
+      <div class="dz3d-axis ax-x" style="width:${G}px;margin-left:${-G / 2}px;transform:translateY(${H / 2}px)"></div>
+      <div class="dz3d-axis ax-y" style="height:${G}px;margin-top:${-G / 2}px"></div>
+      <div class="dz3d-axis ax-z" style="width:${G}px;margin-left:${-G / 2}px;transform:translateY(${H / 2}px) rotateY(90deg)"></div>
+    </div>
+    <div class="dz3d-gizmo">
+      <span class="dz3d-axlbl x" title="Eje X (ancho del lienzo)">X</span>
+      <span class="dz3d-axlbl y" title="Eje Y (alto del lienzo)">Y</span>
+      <span class="dz3d-axlbl z" title="Eje Z (profundidad · data-z)">Z</span>
+      <button data-v="persp" class="active" title="Vista en perspectiva">Persp</button>
+      <button data-v="front" title="De frente (como el lienzo plano)">Frente</button>
+      <button data-v="top" title="Desde arriba: se ve la separación en Z">Arriba</button>
+      <button data-v="side" title="De costado: los planos de perfil">Lado</button>
+      <button class="dz3d-x" title="Salir del espacio 3D">${icoUse("i-x")}</button>
+    </div>
+    <div class="dz3d-zbar" id="dz3dZbar" hidden>
+      <span class="dz3d-zname" id="dz3dZname"></span>
+      <span class="dz3d-axlbl z">Z</span>
+      <input type="range" id="dz3dZr" min="-60" max="400" step="1" value="0"
+        title="Profundidad del plano activo: negativo = más cerca de la cámara, 0 = plano de acción, positivo = fondo">
+      <input type="number" id="dz3dZn" min="-60" max="400" step="1" value="0" class="dz-win">
+      <span class="dz-hint">cerca ← 0 → lejos · mueve el parallax del export</span>
+    </div>`;
+  cv.appendChild(stage);
+
+  // ── planos: un svg por capa, con los defs (gradientes/filtros) clonados ──
+  const world = $("#dz3dWorld");
+  const defs = [...svg.children].filter(n => DZ_SKIP_TAGS.includes(n.tagName.toLowerCase()));
+  const kids = dz3dKids(svg);
+  DZ.d3.els = kids;
+  kids.forEach((el, i) => {
+    const card = document.createElement("div");
+    card.className = "dz3d-card";
+    card.dataset.i = i;
+    card.style.cssText = `width:${W}px;height:${H}px;margin-left:${-W / 2}px;margin-top:${-H / 2}px;`;
+    const cs = document.createElementNS(SVGNS, "svg");
+    cs.setAttribute("viewBox", vb.join(" "));
+    cs.setAttribute("width", W); cs.setAttribute("height", H);
+    defs.forEach(d => cs.appendChild(d.cloneNode(true)));
+    cs.appendChild(el.cloneNode(true));
+    card.appendChild(cs);
+    const tag = document.createElement("span");
+    tag.className = "dz3d-tag";
+    card.appendChild(tag);
+    world.appendChild(card);
+    dz3dCardZ(card, el);
+    dz3dWireCard(card, cs, el, i);
+  });
+
+  // ── controles de vista ──
+  stage.querySelectorAll(".dz3d-gizmo [data-v]").forEach(b => b.onclick = () => {
+    const [rx, ry] = DZ3D_VIEWS[b.dataset.v];
+    DZ.d3.rx = rx; DZ.d3.ry = ry;
+    stage.querySelectorAll(".dz3d-gizmo [data-v]").forEach(x => x.classList.toggle("active", x === b));
+    dz3dApply();
+  });
+  stage.querySelector(".dz3d-x").onclick = () => dz3dExit();
+
+  // ── órbita / paneo / zoom sobre el fondo ──
+  stage.addEventListener("pointerdown", e => {
+    if (e.target.closest(".dz3d-card") || e.target.closest(".dz3d-gizmo") ||
+        e.target.closest(".dz3d-zbar")) return;
+    const d3 = DZ.d3, sx = e.clientX, sy = e.clientY;
+    const base = { rx: d3.rx, ry: d3.ry, px: d3.panX, py: d3.panY };
+    const pan = e.shiftKey || e.button === 1;
+    stage.setPointerCapture(e.pointerId);
+    const move = ev => {
+      if (pan) { d3.panX = base.px + (ev.clientX - sx); d3.panY = base.py + (ev.clientY - sy); }
+      else {
+        d3.ry = base.ry + (ev.clientX - sx) * 0.4;
+        d3.rx = Math.max(-90, Math.min(90, base.rx - (ev.clientY - sy) * 0.4));
+      }
+      dz3dApply();
+    };
+    const up = () => { stage.removeEventListener("pointermove", move); stage.removeEventListener("pointerup", up); };
+    stage.addEventListener("pointermove", move);
+    stage.addEventListener("pointerup", up);
+    e.preventDefault();
+  });
+  stage.addEventListener("wheel", e => {
+    e.preventDefault();
+    DZ.d3.zoom = Math.max(0.12, Math.min(3, DZ.d3.zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
+    dz3dApply();
+  }, { passive: false });
+
+  // ── barra Z (manejo del eje de profundidad del plano activo) ──
+  const zSet = (z, commit) => {
+    const i = DZ.d3.act; if (i < 0) return;
+    const el = DZ.d3.els[i];
+    z = Math.max(-60, Math.min(400, Math.round(+z || 0)));
+    if (z === 0) el.removeAttribute("data-z"); else el.setAttribute("data-z", z);
+    $("#dz3dZr").value = z; $("#dz3dZn").value = z;
+    const card = world.querySelector(`.dz3d-card[data-i="${i}"]`);
+    if (card) dz3dCardZ(card, el);
+    if (commit) { DZ.dirty = true; dzPersist(); dzZPanelRender(); }
+  };
+  $("#dz3dZr").addEventListener("input", e => zSet(e.target.value, false));
+  $("#dz3dZr").addEventListener("change", e => zSet(e.target.value, true));
+  $("#dz3dZn").addEventListener("change", e => zSet(e.target.value, true));
+
+  dz3dApply();
+  if (DZ.d3.act >= 0 && DZ.d3.act < kids.length) dz3dActivate(DZ.d3.act);
+  else if (kids.length === 1) dz3dActivate(0);
+}
+
+function dz3dCardZ(card, el) {
+  const z = parseFloat(el.getAttribute("data-z")) || 0;
+  card.style.transform = `translateZ(${(-z * DZ3D_DEPTH).toFixed(1)}px)`;
+  const tag = card.querySelector(".dz3d-tag");
+  if (tag) tag.textContent = dzLayerLabel(el) + " · z=" + z;
+}
+
+function dz3dApply() {
+  const d3 = DZ.d3, w = $("#dz3dWorld");
+  if (!d3 || !w) return;
+  w.style.transform = `translate(${d3.panX}px, ${d3.panY}px) scale(${d3.zoom}) ` +
+                      `rotateX(${d3.rx}deg) rotateY(${d3.ry}deg)`;
+  const sb = $("#sbZoom");
+  if (sb) sb.textContent = Math.round(d3.zoom * 100) + "% · 3D " +
+    Math.round(d3.rx) + "°/" + Math.round(d3.ry) + "°";
+}
+
+function dz3dActivate(i) {
+  const d3 = DZ.d3; if (!d3) return;
+  d3.act = i;
+  document.querySelectorAll("#dz3dWorld .dz3d-card").forEach(c =>
+    c.classList.toggle("act", +c.dataset.i === i));
+  const el = d3.els[i];
+  DZ.sel = el;                                   // props/rig/walk usan la selección
+  const zb = $("#dz3dZbar");
+  zb.hidden = false;
+  $("#dz3dZname").textContent = dzLayerLabel(el);
+  const z = parseFloat(el.getAttribute("data-z")) || 0;
+  $("#dz3dZr").value = z; $("#dz3dZn").value = z;
+}
+
+/* refresca el contenido del plano i desde el svg real (tras dibujar/mover) */
+function dz3dSyncCard(i) {
+  const d3 = DZ.d3; if (!d3) return;
+  const card = document.querySelector(`#dz3dWorld .dz3d-card[data-i="${i}"]`);
+  const el = d3.els[i];
+  if (!card || !el) return;
+  const cs = card.querySelector("svg");
+  const clone = el.cloneNode(true);
+  cs.replaceChild(clone, cs.lastElementChild);
+  dz3dCardZ(card, el);
+}
+
+function dz3dWireCard(card, cs, el, i) {
+  cs.addEventListener("pointerdown", e => {
+    e.stopPropagation();
+    const d3 = DZ.d3;
+    if (d3.act !== i) { dz3dActivate(i); return; }     // 1er clic: activar el plano
+    const tool = DZ.tool || "select";
+
+    // ── dibujo 2D sobre el plano activo (lápiz / pincel) ──
+    if (tool === "pencil" || tool === "brush") {
+      const pts = [[e.offsetX, e.offsetY, e.pressure || 0.5]];
+      const live = document.createElementNS(SVGNS, "path");
+      live.setAttribute("fill", "none");
+      live.setAttribute("stroke", $("#dzPFill") && tool === "brush"
+        ? ($("#dzPStroke").value || "#1a1a1a") : ($("#dzPStroke").value || "#1a1a1a"));
+      live.setAttribute("stroke-width", +$("#dzDrawW").value || 6);
+      live.setAttribute("stroke-linecap", "round");
+      live.setAttribute("opacity", "0.8");
+      cs.appendChild(live);
+      cs.setPointerCapture(e.pointerId);
+      const move = ev => {
+        pts.push([ev.offsetX, ev.offsetY, ev.pressure || 0.5]);
+        live.setAttribute("d", "M " + pts.map(p => p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" L "));
+      };
+      const up = () => {
+        cs.removeEventListener("pointermove", move); cs.removeEventListener("pointerup", up);
+        live.remove();
+        if (pts.length < 3) return;
+        dzSnapshot();
+        const refined = dzRefineStroke(pts);
+        const color = $("#dzPStroke").value || "#1a1a1a";
+        const w = +$("#dzDrawW").value || 6;
+        let stroke;
+        if (tool === "brush") stroke = dzBrushRibbon(refined, w, color);
+        else {
+          stroke = document.createElementNS(SVGNS, "path");
+          stroke.setAttribute("d", dzSmoothPath(refined));
+          stroke.setAttribute("fill", "none");
+          stroke.setAttribute("stroke", color);
+          stroke.setAttribute("stroke-width", w);
+          stroke.setAttribute("stroke-linecap", "round");
+          stroke.setAttribute("stroke-linejoin", "round");
+          stroke.setAttribute("data-low", "pencil");
+        }
+        if (!stroke) return;
+        // al grupo activo si es <g>; si no, al lienzo con el mismo data-z
+        if (el.tagName.toLowerCase() === "g") el.appendChild(stroke);
+        else {
+          const z = el.getAttribute("data-z");
+          if (z) stroke.setAttribute("data-z", z);
+          el.parentNode.insertBefore(stroke, el.nextSibling);
+          DZ.dirty = true; dzPersist(); dz3dBuild();   // capa nueva → replanificar planos
+          return;
+        }
+        DZ.dirty = true; dzPersist();
+        dz3dSyncCard(i);
+        dzBuildLayers();
+      };
+      cs.addEventListener("pointermove", move);
+      cs.addEventListener("pointerup", up);
+      e.preventDefault();
+      return;
+    }
+
+    // ── mover la capa DENTRO de su plano (ejes X·Y locales) ──
+    if (tool === "select" || tool === "direct") {
+      const sx = e.offsetX, sy = e.offsetY;
+      const clone = cs.lastElementChild;
+      const start = dzReadPos(clone);
+      let dx = 0, dy = 0;
+      cs.setPointerCapture(e.pointerId);
+      const move = ev => {
+        dx = ev.offsetX - sx; dy = ev.offsetY - sy;
+        dzWritePos(clone, start, dx, dy);
+      };
+      const up = () => {
+        cs.removeEventListener("pointermove", move); cs.removeEventListener("pointerup", up);
+        if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
+        dzSnapshot();
+        dzWritePos(el, dzReadPos(el), dx, dy);
+        DZ.dirty = true; dzPersist();
+        dz3dSyncCard(i);
+      };
+      cs.addEventListener("pointermove", move);
+      cs.addEventListener("pointerup", up);
+      e.preventDefault();
+    }
+  });
+}
+
+function dz3dExit(silent) {
+  const stage = $("#dz3dStage"); if (stage) stage.remove();
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (svg) svg.style.visibility = "";
+  $("#dz3DBtn").classList.remove("active");
+  DZ.d3 = null;
+  if (!silent) {
+    dzPersist();
+    dzBuildLayers();
+    dzApplyZoom();
+    dzSetStatus("Lienzo plano — la profundidad Z de cada capa quedó guardada (diorama/parallax)");
+  }
+}
+
 const DZ_SKIP_TAGS = ["defs", "title", "desc", "style", "metadata", "lineargradient",
                       "radialgradient", "filter", "clippath", "mask", "symbol"];
 function dzLayerLabel(el) {
