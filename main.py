@@ -28,7 +28,10 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from config import Config, data_dir
 from providers import get_provider, PROVIDERS
 from code_runner import CodeRunner
-from low_anim import AnimationAPI
+try:
+    from low_anim import AnimationAPI
+except Exception:            # dep opcional ausente (p.ej. numpy): LOW arranca igual
+    AnimationAPI = None
 from self_improvement import SelfImprovementSystem
 
 IGNORE_DIRS = {".git", "__pycache__", "node_modules", ".venv", "venv",
@@ -1742,6 +1745,8 @@ class Api:
         """Inicializa el motor de animación para el workspace actual."""
         if not s.ws:
             return {"error": "Abrí un proyecto primero"}
+        if AnimationAPI is None:
+            return {"error": "motor de animación no disponible (instalá numpy)"}
         try:
             s._anim = AnimationAPI()
             s._anim.create_project(name, width, height, fps, duration)
@@ -1794,6 +1799,8 @@ class Api:
     def anim_get_scene_assets(s, description=""):
         """Genera prompts para assets visuales con IA."""
         if not s._anim:
+            if AnimationAPI is None:
+                return {"error": "motor de animación no disponible (instalá numpy)"}
             s._anim = AnimationAPI()
         try:
             prompts = s._anim.generate_scene_assets(description or "cartoon character")
@@ -1816,6 +1823,8 @@ class Api:
         """Carga un proyecto de animación."""
         if not s.ws:
             return {"error": "Abrí un proyecto primero"}
+        if AnimationAPI is None:
+            return {"error": "motor de animación no disponible (instalá numpy)"}
         try:
             src = folder or (Path(s.ws) / "anim")
             s._anim = AnimationAPI()
