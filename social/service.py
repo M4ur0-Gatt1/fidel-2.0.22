@@ -43,9 +43,22 @@ def _adapter_for(row):
 
 class SocialService:
     def __init__(self):
-        self.conn = db.connect()
-        db.migrate(self.conn)
-        self.brand_mgr = BrandManager(self.conn)
+        self._local = threading.local()
+        db.migrate(self.conn)              # crea la conexión de este thread
+        self.brand_mgr = BrandManager(self)
+        # serializa las secciones de varias sentencias (SELECT+INSERT/UPDATE)
+        # entre los threads de pywebview y el scheduler
+        self._lock = threading.RLock()
+
+    @property
+    def conn(self):
+        """Conexión SQLite del thread actual (pywebview usa un thread por
+        llamada js_api; compartir una conexión entre threads rompe)."""
+        c = getattr(self._local, "conn", None)
+        if c is None:
+            c = db.connect()
+            self._local.conn = c
+        return c
 
     def state(self) -> dict:
         platforms = []
@@ -104,19 +117,20 @@ class SocialService:
             # Canva usa API key, no OAuth
             if not client_id:
                 return {"error": "Client ID = Canva API Key (obligatorio)"}
-            cur = self.conn.execute(
-                "SELECT id FROM social_accounts WHERE platform='canva' AND status='active'")
-            existing = cur.fetchone()
-            if existing:
-                self.conn.execute(
-                    "UPDATE social_accounts SET auth_blob=?, client_id=? WHERE id=?",
-                    (encrypt(json.dumps({"api_key": client_id})), client_id, existing["id"]))
-            else:
-                self.conn.execute(
-                    "INSERT INTO social_accounts (brand_id,platform,auth_blob,client_id) VALUES (?,?,?,?)",
-                    (self.brand_mgr.brand_id, "canva",
-                     encrypt(json.dumps({"api_key": client_id})), client_id))
-            self.conn.commit()
+            with self._lock:
+                cur = self.conn.execute(
+                    "SELECT id FROM social_accounts WHERE platform='canva' AND status='active'")
+                existing = cur.fetchone()
+                if existing:
+                    self.conn.execute(
+                        "UPDATE social_accounts SET auth_blob=?, client_id=? WHERE id=?",
+                        (encrypt(json.dumps({"api_key": client_id})), client_id, existing["id"]))
+                else:
+                    self.conn.execute(
+                        "INSERT INTO social_accounts (brand_id,platform,auth_blob,client_id) VALUES (?,?,?,?)",
+                        (self.brand_mgr.brand_id, "canva",
+                         encrypt(json.dumps({"api_key": client_id})), client_id))
+                self.conn.commit()
             return {"ok": True, "handle": "Canva API conectada"}
 
         # OAuth2 loopback para el resto
@@ -132,23 +146,24 @@ class SocialService:
         enc = encrypt(json.dumps(auth_blob))
         sec_enc = encrypt(client_secret) if client_secret else b""
 
-        cur = self.conn.execute(
-            "SELECT id FROM social_accounts WHERE platform=? AND status='active'", (platform,))
-        existing = cur.fetchone()
-        if existing:
-            self.conn.execute(
-                "UPDATE social_accounts SET auth_blob=?, client_id=?, client_secret=?, "
-                "token_expires_at=? WHERE id=?",
-                (enc, client_id, sec_enc,
-                 time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(auth_blob["expires_at"])),
-                 existing["id"]))
-        else:
-            self.conn.execute(
-                "INSERT INTO social_accounts (brand_id,platform,auth_blob,client_id,"
-                "client_secret,token_expires_at) VALUES (?,?,?,?,?,?)",
-                (self.brand_mgr.brand_id, platform, enc, client_id, sec_enc,
-                 time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(auth_blob["expires_at"]))))
-        self.conn.commit()
+        with self._lock:
+            cur = self.conn.execute(
+                "SELECT id FROM social_accounts WHERE platform=? AND status='active'", (platform,))
+            existing = cur.fetchone()
+            if existing:
+                self.conn.execute(
+                    "UPDATE social_accounts SET auth_blob=?, client_id=?, client_secret=?, "
+                    "token_expires_at=? WHERE id=?",
+                    (enc, client_id, sec_enc,
+                     time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(auth_blob["expires_at"])),
+                     existing["id"]))
+            else:
+                self.conn.execute(
+                    "INSERT INTO social_accounts (brand_id,platform,auth_blob,client_id,"
+                    "client_secret,token_expires_at) VALUES (?,?,?,?,?,?)",
+                    (self.brand_mgr.brand_id, platform, enc, client_id, sec_enc,
+                     time.strftime("%Y-%m-%dT%H:%M:%S", time.gmtime(auth_blob["expires_at"]))))
+            self.conn.commit()
         return {"ok": True, "handle": f"@{platform}"}
 
     def disconnect(self, platform: str):
@@ -176,22 +191,23 @@ class SocialService:
 
         templates = cc.list_templates()
         brand_id = self.brand_mgr.brand_id
-        for t in templates:
-            placeholders = t.get("placeholders", {})
-            cur2 = self.conn.execute(
-                "SELECT id FROM canva_templates WHERE canva_template_id=?",
-                (t["id"],))
-            if cur2.fetchone():
-                self.conn.execute(
-                    "UPDATE canva_templates SET name=?, placeholders_json=? "
-                    "WHERE canva_template_id=?",
-                    (t["name"], json.dumps(placeholders), t["id"]))
-            else:
-                self.conn.execute(
-                    "INSERT INTO canva_templates (brand_id,canva_template_id,name,"
-                    "placeholders_json) VALUES (?,?,?,?)",
-                    (brand_id, t["id"], t["name"], json.dumps(placeholders)))
-        self.conn.commit()
+        with self._lock:
+            for t in templates:
+                placeholders = t.get("placeholders", {})
+                cur2 = self.conn.execute(
+                    "SELECT id FROM canva_templates WHERE canva_template_id=?",
+                    (t["id"],))
+                if cur2.fetchone():
+                    self.conn.execute(
+                        "UPDATE canva_templates SET name=?, placeholders_json=? "
+                        "WHERE canva_template_id=?",
+                        (t["name"], json.dumps(placeholders), t["id"]))
+                else:
+                    self.conn.execute(
+                        "INSERT INTO canva_templates (brand_id,canva_template_id,name,"
+                        "placeholders_json) VALUES (?,?,?,?)",
+                        (brand_id, t["id"], t["name"], json.dumps(placeholders)))
+            self.conn.commit()
         return templates
 
     def enqueue(self, network: str, content: str, template_id="",
@@ -227,24 +243,26 @@ class SocialService:
             tpl_row_id = trow["id"]
 
         when = (scheduled_at or "").strip() or datetime.now(timezone.utc).isoformat()
-        cur = self.conn.execute(
-            "INSERT INTO content_queue (brand_id,account_id,template_id,copy_json,"
-            "asset_url,status,scheduled_at) VALUES (?,?,?,?,?,'draft',?)",
-            (self.brand_mgr.brand_id, acct["id"], tpl_row_id,
-             json.dumps({"copy": content}, ensure_ascii=False),
-             asset_path or None, when))
-        self.conn.commit()
-        return cur.lastrowid
+        with self._lock:
+            cur = self.conn.execute(
+                "INSERT INTO content_queue (brand_id,account_id,template_id,copy_json,"
+                "asset_url,status,scheduled_at) VALUES (?,?,?,?,?,'draft',?)",
+                (self.brand_mgr.brand_id, acct["id"], tpl_row_id,
+                 json.dumps({"copy": content}, ensure_ascii=False),
+                 asset_path or None, when))
+            self.conn.commit()
+            return cur.lastrowid
 
     def queue_delete(self, qid: int):
-        row = self.conn.execute(
-            "SELECT status FROM content_queue WHERE id=?", (qid,)).fetchone()
-        if not row:
-            raise ValueError(f"Item #{qid} no existe")
-        if row["status"] == "publishing":
-            raise ValueError(f"Item #{qid} se está publicando — esperá a que termine")
-        self.conn.execute("DELETE FROM content_queue WHERE id=?", (qid,))
-        self.conn.commit()
+        with self._lock:
+            row = self.conn.execute(
+                "SELECT status FROM content_queue WHERE id=?", (qid,)).fetchone()
+            if not row:
+                raise ValueError(f"Item #{qid} no existe")
+            if row["status"] == "publishing":
+                raise ValueError(f"Item #{qid} se está publicando — esperá a que termine")
+            self.conn.execute("DELETE FROM content_queue WHERE id=?", (qid,))
+            self.conn.commit()
 
     def process_item(self, qid: int, llm_fn, notify_fn) -> dict:
         """Procesa un item de la cola: valida → renderiza → publica."""

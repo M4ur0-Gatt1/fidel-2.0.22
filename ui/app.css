@@ -563,29 +563,50 @@ footer {
 .lr-desc { font-size: 11.5px; color: var(--mut); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 #ver { color: var(--mut); font-weight: 600; }
 
-/* 📣 panel de redes sociales */
-.soc-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 6px 0 2px; }
+/* panel de redes sociales */
+.soc-chips { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; margin: 8px 0 2px; }
 .soc-chip {
-  padding: 3px 9px; border: 1px solid var(--line); border-radius: 99px;
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 4px 10px; border: 1px solid var(--line); border-radius: 99px;
   font: 500 11px 'JetBrains Mono', monospace; color: var(--faint);
 }
+.soc-chip::before {
+  content: ""; width: 7px; height: 7px; border-radius: 99px;
+  background: var(--faint); opacity: .5;
+}
 .soc-chip.on { color: var(--green); border-color: var(--green); background: var(--greensoft); }
+.soc-chip.on::before { background: var(--green); opacity: 1; }
+.soc-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
+.soc-btn .ico { width: 13px; height: 13px; }
 .soc-l2 { margin-left: 10px; }
 .krow select.langsel { flex: 1; min-width: 0; }
-.krow input[type="datetime-local"] { flex: none; width: 190px; }
+.krow input[type="datetime-local"] {
+  flex: none; width: 190px; background: var(--panel2); border: 1px solid var(--line);
+  border-radius: 8px; padding: 6px 8px; color: var(--txt);
+  font: 400 12px 'Figtree', sans-serif; outline: none; color-scheme: dark;
+}
+body.light .krow input[type="datetime-local"] { color-scheme: light; }
 .q-row {
   display: flex; align-items: center; gap: 8px; padding: 6px 8px;
   border: 1px solid var(--line); border-radius: 8px; margin-bottom: 5px;
-  font-size: 12px;
+  font-size: 12px; transition: border-color .12s ease, background-color .12s ease;
 }
-.q-st { flex: none; width: 96px; font: 500 10.5px 'JetBrains Mono', monospace; color: var(--mut); }
+.q-row:hover { border-color: var(--mut); background: var(--panel2); }
+.q-st {
+  flex: none; width: 104px; display: inline-flex; align-items: center; gap: 5px;
+  font: 500 10.5px 'JetBrains Mono', monospace; color: var(--mut);
+}
+.q-st .ico { width: 12px; height: 12px; flex: none; }
 .q-row.st-published .q-st { color: var(--green); }
 .q-row.st-failed .q-st { color: var(--red); }
 .q-row.st-publishing .q-st, .q-row.st-rendering .q-st { color: var(--orange); }
+.q-row.st-scheduled .q-st { color: var(--cyan); }
 .q-net { flex: none; width: 70px; font: 600 11px 'JetBrains Mono', monospace; color: var(--cyan); }
 .q-cap { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--txt); }
 .q-when { flex: none; font: 400 10.5px 'JetBrains Mono', monospace; color: var(--faint); }
-.q-row .ghost { padding: 2px 8px; }
+.q-row .ibtn { width: 24px; height: 24px; flex: none; }
+.q-row .ibtn .ico { width: 12px; height: 12px; }
+.q-row .q-del:hover { color: var(--red); }
 
 /* visor de artefactos (render en vivo dentro de Fidel) */
 #artView {
