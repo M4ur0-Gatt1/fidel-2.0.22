@@ -473,6 +473,7 @@ $("#dzDiscBtn").onclick = () => dzDiscToggle();
   $("#tlMove").onclick = dzMoveTween;
   $("#tlRec").onclick = dzRecToggle;
   $("#tlPuppet").onclick = dzPuppetToggle;
+  $("#tlWalk").onclick = dzWalkCycleModal;
   // scrub del X-sheet: arrastrá sobre los cuadros para hojearlos (flipping)
   $("#tlFrames").addEventListener("mousedown", (e) => {
     if (!DZ.anim) return;
@@ -546,13 +547,22 @@ $("#dzDiscBtn").onclick = () => dzDiscToggle();
   // zoom con la rueda del mouse (Alt+scroll = zoom hacia el cursor, pro).
   // Sin Alt la rueda no hace nada raro: dejamos el gesto para el zoom explícito.
   $("#dzCanvas").addEventListener("wheel", (e) => {
-    if (!e.altKey) return;
+    if (!e.altKey && !SPACE3D.active) return;
     e.preventDefault();
-    dzZoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX, e.clientY);
+    if (SPACE3D.active) {
+      // Zoom 3D: cambiar distancia orbital
+      const factor = e.deltaY < 0 ? 0.9 : 1.1;
+      SPACE3D.orbit.dist = Math.max(100, Math.min(5000, SPACE3D.orbit.dist * factor));
+      dz3DApplyTransform();
+      dz3DUpdateGrid();
+      dz3DUpdateGizmo();
+    } else {
+      dzZoomAt(e.deltaY < 0 ? 1.12 : 1 / 1.12, e.clientX, e.clientY);
+    }
   }, { passive: false });
   // regla: clic derecho fija punto de fuga → prevenir menú contextual
   $("#dzCanvas").addEventListener("contextmenu", (e) => {
-    if (DZ.tool === "ruler") e.preventDefault();
+    if (DZ.tool === "ruler" || SPACE3D.active) e.preventDefault();
   });
   // animación
   $("#dzAnim").onclick = dzAnimToggle;
@@ -642,6 +652,16 @@ $("#dzDiscBtn").onclick = () => dzDiscToggle();
   // 🎭 diorama: toggle, cerrar y arrastre del panel
   $("#dzZBtn").onclick = dzZPanelToggle;
   $("#dzZpClose").onclick = () => { $("#dzZPanel").hidden = true; $("#dzZBtn").classList.remove("active"); };
+  // 🌐 Espacio 3D
+  $("#dz3DBtn").onclick = dz3DToggle;
+  $("#dz3dClose").onclick = () => { SPACE3D.active = false; $("#dz3DPanel").hidden = true; $("#dz3DBtn").classList.remove("active"); dz3DRemoveGrid(); dz3DRemoveGizmo(); const s = $("#dzCanvas").querySelector("svg"); if (s) { s.style.transform = ""; s.style.transformOrigin = ""; } };
+  $("#dz3dReset").onclick = dz3DResetView;
+  $("#dz3dTop").onclick = dz3DTopView;
+  $("#dz3dFront").onclick = dz3DFrontView;
+  $("#dz3dSide").onclick = dz3DSideView;
+  $("#dz3dPlane").onchange = () => { SPACE3D.plane = $("#dz3dPlane").value; dzSetStatus("🌐 Plano activo: " + SPACE3D.plane.toUpperCase()); };
+  $("#dz3dGrid").onchange = dz3DUpdateGrid;
+  $("#dz3dAxes").onchange = dz3DUpdateGizmo;
   $("#dzZpHead").addEventListener("mousedown", (e) => {
     if (e.target.id === "dzZpClose") return;
     e.preventDefault();
@@ -2828,8 +2848,23 @@ function dzSetTool(t) {
   cv.dataset.tool = t;          // el CSS decide el cursor de los hijos del svg
   if (PEN && t !== "pen") dzPenFinish(true);
   if (t !== "nodes") dzNodesClear();
-  // el gotero/balde/nodos trabajan SOBRE la selección o eligiendo elemento: no deseleccionar
-  if (!["select", "direct", "nodes", "dropper", "bucket", "iron", "magnet"].includes(t)) dzDeselect();
+  // 🌐 espacio 3D: activar automáticamente si no lo está
+  if (t === "space3d" && !SPACE3D.active) {
+    dz3DToggle();
+    $("#dz3DBtn").classList.add("active");
+  }
+  // si salimos de space3d, desactivar el modo
+  if (t !== "space3d" && SPACE3D.active) {
+    SPACE3D.active = false;
+    $("#dz3DPanel").hidden = true;
+    $("#dz3DBtn").classList.remove("active");
+    dz3DRemoveGrid();
+    dz3DRemoveGizmo();
+    const s = cv.querySelector("svg");
+    if (s) { s.style.transform = ""; s.style.transformOrigin = ""; cv.style.cursor = ""; }
+  }
+  // el gotero/balde/nodos/trabajan SOBRE la selección o eligiendo elemento: no deseleccionar
+  if (!["select", "direct", "nodes", "dropper", "bucket", "iron", "magnet", "space3d"].includes(t)) dzDeselect();
   dzSbTool(); dzToolOptsRender();
 }
 /* los clics del lienzo hacen preventDefault (para dibujar/arrastrar), y eso
@@ -2967,6 +3002,12 @@ function dzDrawRaw(e) {
 
 function dzDrawDown(e) {
   dzReleaseFocus();
+  // 🌐 Espacio 3D: interceptar orbit/pan antes que nada
+  if (SPACE3D.active) {
+    if (dz3DHandlePointerDown(e)) return;
+    // Si tool es space3d, seguir con dibujo 3D
+    if (DZ.tool === "space3d") { dz3DDrawStart(e); return; }
+  }
   const tool = DZ.tool || "select";
   if (DZ.spaceDown || e.button === 1 || tool === "hand") return;
   if (e.target.closest && e.target.closest("#dzCam")) return;
@@ -3001,6 +3042,11 @@ function dzDrawDown(e) {
 }
 
 function dzDrawMove(e) {
+  // 🌐 Espacio 3D: orbit/pan/dibujo 3D
+  if (SPACE3D.active) {
+    if (dz3DHandlePointerMove(e)) return;
+    if (DZ3D_DRAW) { dz3DDrawMove(e); return; }
+  }
   if (PEN && PEN.dragging) { dzPenDrag(dzToUser(e.clientX, e.clientY)); return; }
   if (PEN && !DRAW_TRACK) { dzPenHover(dzToUser(e.clientX, e.clientY)); return; }
   if (DZ.tool === "ruler" && RULER && RULER.a) { dzRulerMove(e); return; }
@@ -3025,6 +3071,11 @@ function dzDrawMove(e) {
 }
 
 function dzDrawUp(e) {
+  // 🌐 Espacio 3D
+  if (SPACE3D.active) {
+    if (dz3DHandlePointerUp(e)) return;
+    if (DZ3D_DRAW) { dz3DDrawEnd(e); return; }
+  }
   if (PEN && PEN.dragging) { dzPenUp(); return; }
   if (INFLATOR && INFLATOR.el) { dzInflatorUp(e); return; }
   if (MAGNET && MAGNET.active) { dzMagnetUp(e); return; }
@@ -3295,7 +3346,7 @@ function dzKeysSave() {
 }
 function dzRunAction(act) {
   const TOOLS = ["select", "direct", "hand", "nodes", "pencil", "brush", "pen", "eraser",
-                 "dropper", "bucket", "pivot", "ruler", "inflator", "handler", "iron", "pliers", "magnet"];
+                 "dropper", "bucket", "pivot", "ruler", "inflator", "handler", "iron", "pliers", "magnet", "space3d"];
   if (TOOLS.includes(act)) return dzSetTool(act);
   if (act === "camera") return dzCamToggle();
   if (["rect", "ellipse", "text", "line"].includes(act)) return dzAddShape(act);
@@ -3778,6 +3829,390 @@ function dzRulerClear() {
   const svg = $("#dzCanvas").querySelector("svg");
   if (svg) { const g = svg.querySelector("g.dz-vp-guides"); if (g) g.remove(); }
   RULER = null;
+}
+
+/* ═══════════════════════════════════════════════════════════════════════
+   🌐 ESPACIO 3D — Grease Pencil / Blender 3D Viewport
+   Dibujá en planos 3D (XY / XZ / YZ) con orbit, zoom, y gizmo de ejes.
+   ═══════════════════════════════════════════════════════════════════════ */
+
+/* Estado del visor 3D:
+   - orbit: { theta, phi, dist } — cámara esférica
+   - target: { x, y } — centro del orbit
+   - plane: "xy" | "xz" | "yz" — plano activo de dibujo
+   - active: bool — si el visor 3D está encendido
+*/
+let SPACE3D = {
+  active: false,
+  orbit: { theta: 0, phi: 0.4, dist: 800 },
+  target: { x: 0, y: 0 },
+  plane: "xy",
+  orbiting: false,
+  panning: false,
+  last: { x: 0, y: 0 }
+};
+
+/* ── Toggle del panel 3D ── */
+function dz3DToggle() {
+  SPACE3D.active = !SPACE3D.active;
+  const panel = $("#dz3DPanel");
+  if (SPACE3D.active) {
+    panel.hidden = false;
+    dz3DApplyTransform();
+    dz3DUpdateGrid();
+    dz3DUpdateGizmo();
+    // Cambiar cursor del canvas para orbit
+    const canvas = $("#dzCanvas");
+    canvas.style.cursor = "grab";
+    dzSetStatus("🌐 Espacio 3D activo — arrastrá con botón central para orbitar");
+  } else {
+    panel.hidden = true;
+    dz3DRemoveGrid();
+    dz3DRemoveGizmo();
+    const canvas = $("#dzCanvas");
+    canvas.style.cursor = "";
+    // Restaurar transformación del SVG
+    const svg = canvas.querySelector("svg");
+    if (svg) {
+      svg.style.transform = "";
+      svg.style.transformOrigin = "";
+    }
+    dzSetStatus("Espacio 3D desactivado");
+  }
+  DZ.dirty = true;
+}
+
+/* ── Orbit: inicio ── */
+function dz3DOrbitStart(e) {
+  if (!SPACE3D.active) return false;
+  const isMiddle = e.button === 1;
+  const isRight = e.button === 2;
+  const isShift = e.shiftKey;
+  if (isMiddle || (isRight && !isShift)) {
+    SPACE3D.orbiting = true;
+    SPACE3D.last = { x: e.clientX, y: e.clientY };
+    const canvas = $("#dzCanvas");
+    canvas.style.cursor = "grabbing";
+    e.preventDefault();
+    e.stopPropagation();
+    return true;
+  }
+  if ((isMiddle && isShift) || (isRight && isShift)) {
+    SPACE3D.panning = true;
+    SPACE3D.last = { x: e.clientX, y: e.clientY };
+    e.preventDefault();
+    e.stopPropagation();
+    return true;
+  }
+  return false;
+}
+
+/* ── Orbit: movimiento ── */
+function dz3DOrbitMove(e) {
+  if (!SPACE3D.active) return false;
+  const dx = e.clientX - SPACE3D.last.x;
+  const dy = e.clientY - SPACE3D.last.y;
+  SPACE3D.last = { x: e.clientX, y: e.clientY };
+  if (SPACE3D.orbiting) {
+    const sens = 0.008;
+    SPACE3D.orbit.theta -= dx * sens;
+    SPACE3D.orbit.phi = Math.max(-1.5, Math.min(1.5, SPACE3D.orbit.phi - dy * sens));
+    dz3DApplyTransform();
+    dz3DUpdateGrid();
+    dz3DUpdateGizmo();
+    e.preventDefault();
+    e.stopPropagation();
+    return true;
+  }
+  if (SPACE3D.panning) {
+    const scale = 1 / (DZ.zoom || 1);
+    SPACE3D.target.x -= dx * scale;
+    SPACE3D.target.y -= dy * scale;
+    dz3DApplyTransform();
+    dz3DUpdateGrid();
+    dz3DUpdateGizmo();
+    e.preventDefault();
+    e.stopPropagation();
+    return true;
+  }
+  return false;
+}
+
+/* ── Orbit: fin ── */
+function dz3DOrbitEnd(e) {
+  if (SPACE3D.orbiting || SPACE3D.panning) {
+    SPACE3D.orbiting = false;
+    SPACE3D.panning = false;
+    const canvas = $("#dzCanvas");
+    canvas.style.cursor = "grab";
+    e.preventDefault();
+    e.stopPropagation();
+    return true;
+  }
+  return false;
+}
+
+/* ── Aplicar transformación 3D al SVG ── */
+function dz3DApplyTransform() {
+  if (!SPACE3D.active) return;
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (!svg) return;
+  const { theta, phi, dist } = SPACE3D.orbit;
+  const tx = SPACE3D.target.x;
+  const ty = SPACE3D.target.y;
+  // Convertir coordenadas esféricas a CSS 3D
+  const cx = 0, cy = 0;
+  const cosTheta = Math.cos(theta), sinTheta = Math.sin(theta);
+  const cosPhi = Math.cos(phi), sinPhi = Math.sin(phi);
+  // Posición de la "cámara" en espacio 3D
+  const camX = cx + dist * cosPhi * sinTheta;
+  const camY = cy - dist * sinPhi;
+  const camZ = dist * cosPhi * cosTheta;
+  // Aplicar perspectiva CSS 3D
+  svg.style.transform = `
+    translate(${tx}px, ${ty}px)
+    rotateX(${-phi * 180 / Math.PI}deg)
+    rotateY(${theta * 180 / Math.PI}deg)
+    translateZ(${-dist}px)
+  `;
+  svg.style.transformOrigin = `${cx + 400}px ${cy + 300}px`;
+  svg.style.perspective = "1200px";
+}
+
+/* ── Generar grid de perspectiva ── */
+function dz3DUpdateGrid() {
+  if (!SPACE3D.active) return;
+  const canvas = $("#dzCanvas");
+  let gridEl = canvas.querySelector(".dz-3d-grid");
+  if (!gridEl) {
+    gridEl = document.createElement("div");
+    gridEl.className = "dz-3d-grid";
+    canvas.appendChild(gridEl);
+  }
+  // Generar un SVG con la grilla de perspectiva basada en el ángulo actual
+  const w = canvas.clientWidth || 1200;
+  const h = canvas.clientHeight || 800;
+  const { theta, phi, dist } = SPACE3D.orbit;
+  // Líneas de grid: paralelas al eje X (horizontales) y al eje Z (profundidad)
+  const lines = [];
+  const gridSize = 200;  // espacio entre líneas
+  const count = 8;       // cantidad de líneas por lado
+  const cx = w / 2, cy = h / 2;
+  // Proyección perspectiva simple
+  const fov = 400;
+  const cosPhi = Math.cos(phi);
+  for (let i = -count; i <= count; i++) {
+    // Líneas paralelas al eje X (a lo ancho)
+    const z = i * gridSize;
+    let ptsX = [];
+    for (let j = -count; j <= count; j++) {
+      const x = j * gridSize;
+      // Proyectar (x, 0, z) a 2D con perspectiva simple
+      const cs = Math.cos(theta), sn = Math.sin(theta);
+      const rx = x * cs - z * sn;
+      const rz = x * sn + z * cs;
+      const ry = 0;
+      // Proyección perspectiva
+      const factor = fov / (fov + rz);
+      const px = cx + rx * factor;
+      const py = cy - ry * factor + (phi * 300);  // altura según phi
+      ptsX.push(`${px},${py}`);
+    }
+    lines.push(`<polyline points="${ptsX.join(" ")}" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="1"/>`);
+    // Líneas paralelas al eje Z (profundidad)
+    const xz = i * gridSize;
+    let ptsZ = [];
+    for (let j = -count; j <= count; j++) {
+      const zz = j * gridSize;
+      const cs = Math.cos(theta), sn = Math.sin(theta);
+      const rx = xz * cs - zz * sn;
+      const rz = xz * sn + zz * cs;
+      const factor = fov / (fov + rz);
+      const px = cx + rx * factor;
+      const py = cy + factor * (phi * 300);
+      ptsZ.push(`${px},${py}`);
+    }
+    lines.push(`<polyline points="${ptsZ.join(" ")}" fill="none" stroke="rgba(255,255,255,.07)" stroke-width="1"/>`);
+  }
+  gridEl.innerHTML = `<svg viewBox="0 0 ${w} ${h}" xmlns="http://www.w3.org/2000/svg">
+    <defs><radialGradient id="g3dFade"><stop offset="60%" stop-color="#000" stop-opacity=".4"/><stop offset="100%" stop-color="#000" stop-opacity="0"/></radialGradient></defs>
+    <rect width="${w}" height="${h}" fill="url(#g3dFade)"/>
+    ${lines.join("\n    ")}
+    <!-- Punto de fuga central -->
+    <circle cx="${cx}" cy="${cy + phi * 300}" r="3" fill="rgba(255,255,255,.15)"/>
+  </svg>`;
+  // Mostrar/ocultar según checkbox
+  const showGrid = $("#dz3dGrid");
+  gridEl.style.display = showGrid && showGrid.checked ? "" : "none";
+}
+
+function dz3DRemoveGrid() {
+  const grid = $("#dzCanvas").querySelector(".dz-3d-grid");
+  if (grid) grid.remove();
+}
+
+/* ── Gizmo de ejes 3D (esquina inferior derecha) ── */
+function dz3DUpdateGizmo() {
+  if (!SPACE3D.active) return;
+  const canvas = $("#dzCanvas");
+  let gizmo = canvas.querySelector(".dz-3d-gizmo");
+  if (!gizmo) {
+    gizmo = document.createElement("div");
+    gizmo.className = "dz-3d-gizmo";
+    canvas.appendChild(gizmo);
+  }
+  const { theta, phi } = SPACE3D.orbit;
+  const csT = Math.cos(theta), snT = Math.sin(theta);
+  const csP = Math.cos(phi), snP = Math.sin(phi);
+  // Ejes: X=rojo, Y=verde, Z=azul — proyectados en 2D con la rotación actual
+  const len = 35;
+  const ox = 40, oy = 40; // origen del gizmo
+  const proj = (x, y, z) => {
+    // Rotar por theta (Y) luego phi (X)
+    const x1 = x * csT - z * snT;
+    const z1 = x * snT + z * csT;
+    const x2 = x1;
+    const y2 = y * csP - z1 * snP;
+    return { x: ox + x2 * 1.2, y: oy + y2 * 1.2 };
+  };
+  const o = proj(0, 0, 0);
+  const ex = proj(len, 0, 0);
+  const ey = proj(0, -len, 0);
+  const ez = proj(0, 0, len);
+  gizmo.innerHTML = `<svg viewBox="0 0 80 80" xmlns="http://www.w3.org/2000/svg">
+    <line x1="${o.x}" y1="${o.y}" x2="${ex.x}" y2="${ex.y}" stroke="#F0450E" stroke-width="3" stroke-linecap="round"/>
+    <text x="${ex.x + 4}" y="${ex.y + 4}" fill="#F0450E" font-size="14" font-weight="700" font-family="sans-serif">X</text>
+    <line x1="${o.x}" y1="${o.y}" x2="${ey.x}" y2="${ey.y}" stroke="#4ADE80" stroke-width="3" stroke-linecap="round"/>
+    <text x="${ey.x + 4}" y="${ey.y + 4}" fill="#4ADE80" font-size="14" font-weight="700" font-family="sans-serif">Y</text>
+    <line x1="${o.x}" y1="${o.y}" x2="${ez.x}" y2="${ez.y}" stroke="#60A5FA" stroke-width="3" stroke-linecap="round"/>
+    <text x="${ez.x + 4}" y="${ez.y + 4}" fill="#60A5FA" font-size="14" font-weight="700" font-family="sans-serif">Z</text>
+    <!-- Círculo de origen -->
+    <circle cx="${o.x}" cy="${o.y}" r="3" fill="#fff" opacity=".5"/>
+  </svg>`;
+  // Ocultar si el checkbox lo pide
+  const showAxes = $("#dz3dAxes");
+  gizmo.style.display = showAxes && showAxes.checked ? "" : "none";
+}
+
+function dz3DRemoveGizmo() {
+  const gizmo = $("#dzCanvas").querySelector(".dz-3d-gizmo");
+  if (gizmo) gizmo.remove();
+}
+
+/* ── Vistas predefinidas ── */
+function dz3DResetView() {
+  SPACE3D.orbit = { theta: 0, phi: 0.4, dist: 800 };
+  SPACE3D.target = { x: 0, y: 0 };
+  dz3DApplyTransform();
+  dz3DUpdateGrid();
+  dz3DUpdateGizmo();
+  dzSetStatus("⟲ Vista 3D reseteada");
+}
+
+function dz3DTopView() {
+  SPACE3D.orbit = { theta: 0, phi: Math.PI / 2 + 0.01, dist: 800 };
+  SPACE3D.target = { x: 0, y: 0 };
+  dz3DApplyTransform();
+  dz3DUpdateGrid();
+  dz3DUpdateGizmo();
+  dzSetStatus("⬇ Vista superior");
+}
+
+function dz3DFrontView() {
+  SPACE3D.orbit = { theta: 0, phi: 0, dist: 800 };
+  SPACE3D.target = { x: 0, y: 0 };
+  dz3DApplyTransform();
+  dz3DUpdateGrid();
+  dz3DUpdateGizmo();
+  dzSetStatus("⬛ Vista frontal");
+}
+
+function dz3DSideView() {
+  SPACE3D.orbit = { theta: Math.PI / 2, phi: 0, dist: 800 };
+  SPACE3D.target = { x: 0, y: 0 };
+  dz3DApplyTransform();
+  dz3DUpdateGrid();
+  dz3DUpdateGizmo();
+  dzSetStatus("◼ Vista lateral");
+}
+
+/* ── Integrar con los eventos de pointer del canvas ── */
+// Llamar desde dzDrawDown si space3d activo
+function dz3DHandlePointerDown(e) {
+  if (!SPACE3D.active) return false;
+  if (e.button === 1 || e.button === 2) return dz3DOrbitStart(e);
+  // Si es clic izquierdo con tool space3d, dibujar en el plano activo
+  if (DZ.tool === "space3d" && e.button === 0) {
+    // Dibujo proyectado al plano 3D activo
+    return dz3DDrawStart(e);
+  }
+  return false;
+}
+
+function dz3DHandlePointerMove(e) {
+  if (!SPACE3D.active) return false;
+  if (SPACE3D.orbiting || SPACE3D.panning) return dz3DOrbitMove(e);
+  return false;
+}
+
+function dz3DHandlePointerUp(e) {
+  if (!SPACE3D.active) return false;
+  return dz3DOrbitEnd(e);
+}
+
+/* ── Dibujar en el plano 3D activo ── */
+let DZ3D_DRAW = null; // { plane, points, el }
+
+function dz3DDrawStart(e) {
+  e.preventDefault(); e.stopPropagation();
+  const p = dzToUser(e.clientX, e.clientY);
+  const plane = SPACE3D.plane;
+  DZ3D_DRAW = { plane, points: [p], el: null };
+  // Crear un path temporal
+  const NS = "http://www.w3.org/2000/svg";
+  const path = document.createElementNS(NS, "path");
+  path.setAttribute("fill", "none");
+  path.setAttribute("stroke", DZ.pStroke || "#1a1a1a");
+  path.setAttribute("stroke-width", (DZ.drawW || 6) + "px");
+  path.setAttribute("stroke-linecap", "round");
+  path.setAttribute("stroke-linejoin", "round");
+  path.setAttribute("data-low", "brush");
+  path.setAttribute("data-plane", plane);
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (svg) svg.appendChild(path);
+  DZ3D_DRAW.el = path;
+  dzSetStatus("🌐 Dibujando en plano " + plane.toUpperCase() + " — soltá para terminar");
+}
+
+function dz3DDrawMove(e) {
+  if (!DZ3D_DRAW || !DZ3D_DRAW.el) return;
+  const p = dzToUser(e.clientX, e.clientY);
+  DZ3D_DRAW.points.push(p);
+  if (DZ3D_DRAW.points.length > 1) {
+    const pts = DZ3D_DRAW.points;
+    let d = "M " + pts[0].x + " " + pts[0].y;
+    for (let i = 1; i < pts.length; i++) {
+      d += " L " + pts[i].x + " " + pts[i].y;
+    }
+    DZ3D_DRAW.el.setAttribute("d", d);
+  }
+}
+
+function dz3DDrawEnd(e) {
+  if (!DZ3D_DRAW || !DZ3D_DRAW.el) return;
+  // Suavizar el trazo
+  const pts = DZ3D_DRAW.points;
+  if (pts.length > 2) {
+    const refined = dzRefineStroke(pts.map(p => [p.x, p.y, 0.5]));
+    const d = dzSmoothPath(refined);
+    DZ3D_DRAW.el.setAttribute("d", d);
+  }
+  // Marcar con data-plane para que al orbitar se transforme con el resto
+  DZ3D_DRAW.el.setAttribute("data-plane", DZ3D_DRAW.plane);
+  DZ3D_DRAW = null;
+  dzMarkDirty();
+  dzBuildLayers();
+  dzSetStatus("✅ Trazo 3D completado en plano " + SPACE3D.plane.toUpperCase());
 }
 
 /* ═══════════════════════════════════════════════════════════════════════
@@ -5103,13 +5538,19 @@ function dzPosDelta(a, b) {
   return [b.tx - a.tx, b.ty - a.ty];
 }
 async function dzTweenFrames(baseSvgText, elPath, offsets) {
-  // genera un cuadro por offset [dx,dy] (en orden) insertándolos tras el actual
+  // genera un cuadro por offset [dx,dy,rot] (en orden) insertándolos tras el actual
   for (let k = offsets.length - 1; k >= 0; k--) {
     const tmp = document.createElement("div"); tmp.innerHTML = baseSvgText;
     const svg2 = tmp.querySelector("svg");
     const el2 = dzElAt(svg2, elPath);
     if (!el2) return "no encontré el elemento en el cuadro clonado";
     dzWritePos(el2, dzReadPos(el2), offsets[k][0], offsets[k][1]);
+    if (offsets[k][2]) {
+      const tr = el2.getAttribute("transform") || "";
+      const b = el2.getBoundingClientRect ? el2.getBBox() : null;
+      const cx = b ? (b.x + b.width / 2) : 540, cy = b ? (b.y + b.height / 2) : 540;
+      el2.setAttribute("transform", (tr ? tr + " " : "") + `rotate(${offsets[k][2]} ${cx} ${cy})`);
+    }
     const r = await api.insert_frame(DZ.path, svg2.outerHTML);
     if (r && r.error) return r.error;
   }
@@ -5277,6 +5718,66 @@ function dzPuppetHUD(txt) {
     $("#dzCanvas").appendChild(h);
   }
   h.textContent = txt;
+}
+
+/* ══ 🚶 CICLO DE CAMINATA automático (estilo Toon Boom / OpenToonz) ══ */
+function dzWalkCycleModal() {
+  if (!DZ.anim) { dzAnimToggle(); if (!DZ.anim) return; }
+  if (!DZ.sel) return sysMsg("🚶 Seleccioná un elemento para animar el ciclo de caminata");
+  openModal(`<h2>🚶 Ciclo de caminata</h2>
+    <div class="sub">Genera un ciclo automático de pasos: el elemento sube/baja y se inclina
+    rítmicamente. Ideal para personajes enteros, siluetas o props que "caminan".</div>
+    <div class="dz-style-row">
+      <span class="dz-hint">Pasos (ciclo completo)</span>
+      <input type="number" id="wcSteps" class="dz-win" value="2" min="1" max="8">
+      <span class="dz-hint">Cuadros por paso</span>
+      <input type="number" id="wcFrames" class="dz-win" value="8" min="4" max="24">
+    </div>
+    <div class="dz-style-row">
+      <span class="dz-hint">Altura del paso (px)</span>
+      <input type="number" id="wcBounce" class="dz-win" value="20" min="1" max="120">
+      <span class="dz-hint">Balanceo (°)</span>
+      <input type="number" id="wcSway" class="dz-win" value="8" min="0" max="45">
+    </div>
+    <div class="m-actions">
+      <button class="ghost" id="mCancel">Cancelar</button>
+      <button class="primary" id="wcGo">🚶 Generar ciclo</button>
+    </div>`);
+  $("#mCancel").onclick = closeModal;
+  $("#wcGo").onclick = () => {
+    const steps = Math.max(1, Math.min(8, +$("#wcSteps").value || 2));
+    const fpb = Math.max(4, Math.min(24, +$("#wcFrames").value || 8));
+    const bounce = Math.max(1, Math.min(120, +$("#wcBounce").value || 20));
+    const sway = Math.max(0, Math.min(45, +$("#wcSway").value || 8));
+    closeModal();
+    dzWalkCycleRun(steps, fpb, bounce, sway);
+  };
+}
+async function dzWalkCycleRun(steps, fpb, bounce, sway) {
+  const el = DZ.sel;
+  if (!el) return;
+  const totalFrames = steps * fpb;
+  dzSnapshot();
+  const startPos = dzReadPos(el);
+  await dzPersist();
+  const base = dzSerialize($("#dzCanvas").querySelector("svg"));
+  dzSetStatus("🚶 Generando " + totalFrames + " cuadros de caminata…");
+  const offs = [];
+  for (let k = 1; k <= totalFrames; k++) {
+    const phase = (k - 1) / fpb;                // 0..steps
+    const t = phase / Math.max(1, steps - 1);   // 0..1 del ciclo
+    // parábola para el bounce: sube en el medio del paso
+    const b = Math.sin(phase * Math.PI) * bounce;
+    // sway sinusoidal
+    const s = Math.sin(phase * Math.PI * 2) * sway;
+    offs.push([0, -Math.abs(b), s]);            // [dx, dy, rotation]
+  }
+  const err = await dzTweenFrames(base, DZ.path, offs);
+  if (err) return dzSetStatus("❌ " + err);
+  DZ.anim.cache = {};
+  try { S.tree = (await api.refresh_tree()).tree; renderTree(); } catch (e) { /* */ }
+  await dzTimelineRefresh(); dzOnionUpdate(); dzTimelineBadges();
+  dzSetStatus("🚶 ¡Ciclo de caminata listo! " + totalFrames + " cuadros — dale ▶ para verlo. Probá distintos bounce/sway para ajustar.");
 }
 
 /* ══ 🎭 DIORAMA: compositing sin nodos ═══════════════════════════════════

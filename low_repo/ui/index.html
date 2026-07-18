@@ -85,6 +85,11 @@
   <symbol id="i-insert" viewBox="0 0 24 24"><path d="M12 3v9"/><path d="M8.5 8.5L12 12l3.5-3.5"/><path d="M4 16v4h16v-4"/></symbol>
   <symbol id="i-wand" viewBox="0 0 24 24"><path d="M4 20L14 10"/><path d="M17 3l.9 2.6L20.5 6.5l-2.6.9L17 10l-.9-2.6L13.5 6.5l2.6-.9z"/><path d="M20 13l.6 1.7 1.7.6-1.7.6-.6 1.7-.6-1.7-1.7-.6 1.7-.6z"/></symbol>
   <symbol id="i-motion" viewBox="0 0 24 24"><circle cx="5" cy="12" r="2.2"/><path d="M8 12h13"/><path d="M16.5 7.5L21 12l-4.5 4.5"/></symbol>
+  <!-- íconos 3D -->
+  <symbol id="i-cube" viewBox="0 0 24 24"><path d="M12 3l9 5v12l-9 5-9-5V8z" fill="none"/><path d="M12 3v10M21 8l-9 5M3 8l9 5"/></symbol>
+  <symbol id="i-orbit" viewBox="0 0 24 24"><circle cx="12" cy="12" r="9"/><ellipse cx="12" cy="12" rx="9" ry="3" opacity=".5"/><path d="M3 7a9 9 0 0118 0M3 17a9 9 0 0018 0"/></symbol>
+  <symbol id="i-grid" viewBox="0 0 24 24"><path d="M3 3h18v18H3z"/><path d="M3 9h18M3 15h18M9 3v18M15 3v18"/><path d="M3 21L21 3" stroke-dasharray="2 2"/></symbol>
+  <symbol id="i-axis" viewBox="0 0 24 24"><path d="M4 20L20 20" stroke="#f00" stroke-width="2"/><path d="M4 20L4 4" stroke="#0f0" stroke-width="2"/><path d="M4 20L20 4" stroke="#00f" stroke-width="2"/><circle cx="4" cy="20" r="2.5"/></symbol>
   <symbol id="i-rec" viewBox="0 0 24 24"><circle cx="12" cy="12" r="8"/><circle cx="12" cy="12" r="3" class="fill"/></symbol>
   <symbol id="i-camkey" viewBox="0 0 24 24"><rect x="2" y="5" width="11" height="10" rx="2"/><path d="M13 8.5l6-3v9l-6-3"/><circle cx="16.5" cy="19" r="2"/><path d="M18.5 19H23"/></symbol>
   <symbol id="i-clap" viewBox="0 0 24 24"><rect x="3" y="10" width="18" height="10" rx="1.5"/><path d="M3 10L4.5 4.5 21 8l-1 3.5"/><path d="M8 5.4l-1.2 3.8M12.5 6.4l-1.2 3.7M17 7.4l-1.2 3.6"/></symbol>
@@ -371,6 +376,7 @@
       <button class="ibtn" id="dzCamBtn" title="Cámara (C): mové/zoomeá/rotá el encuadre y dejá claves por cuadro — el export sale por la cámara"><svg class="ico"><use href="#i-cam"/></svg></button>
       <button class="ibtn" id="dzRigBtn" title="Rig (◆): claves de posición/rotación/escala por PIEZA — posá el personaje en cada cuadro clave y LOW interpola (pegs de Toon Boom)"><svg class="ico"><use href="#i-key"/></svg></button>
       <button class="ibtn" id="dzZBtn" title="Diorama: vista lateral del multiplano — arrastrá cada capa en profundidad (cerca/lejos de la cámara) sin mapas de nodos"><svg class="ico"><use href="#i-stage"/></svg></button>
+      <button class="ibtn dz-toolbtn" data-tool="space3d" id="dz3DBtn" title="🌐 Espacio 3D: dibujá en perspectiva sobre planos 3D como Grease Pencil. Orbitá arrastrando con medio/botón derecho. Cambiá de plano en el panel 3D."><svg class="ico"><use href="#i-cube"/></svg></button>
       <div class="hsep"></div>
       <button class="ibtn" id="dzPenDbgBtn" title="🩺 Diagnóstico de tableta: panel en vivo de eventos pointer — útil para depurar tabletas Huion/Wacom. Clic para activar/desactivar." onclick="dzPenDebugToggle()">🩺</button>
     </div>
@@ -416,6 +422,32 @@
         </div>
         <div class="dz-op-row"><span>Opacidad</span>
           <input type="range" id="opAlpha" min="5" max="70" value="38">
+        </div>
+      </div>
+      <!-- 🌐 Visor 3D: plano de dibujo + orbit + gizmo de ejes -->
+      <div class="dz-3dpanel" id="dz3DPanel" hidden>
+        <div class="dz-op-head" id="dz3dHead">🌐 Espacio 3D <span class="dz-op-x" id="dz3dClose" title="Cerrar">×</span></div>
+        <div class="dz-3d-body">
+          <div class="dz-op-row"><span>Plano activo</span>
+            <select id="dz3dPlane">
+              <option value="xy">XY (frente) — dibujá de frente</option>
+              <option value="xz">XZ (piso) — dibujá en el suelo</option>
+              <option value="yz">YZ (perfil) — dibujá de costado</option>
+            </select>
+          </div>
+          <div class="dz-op-row"><span>Mostrar grid 3D</span>
+            <label><input type="checkbox" id="dz3dGrid" checked> cuadrícula de perspectiva</label>
+          </div>
+          <div class="dz-op-row"><span>Mostrar ejes</span>
+            <label><input type="checkbox" id="dz3dAxes" checked> X rojo · Y verde · Z azul</label>
+          </div>
+          <div class="dz-op-row dz-3d-actions">
+            <button class="ghost" id="dz3dReset" title="Resetear la vista 3D (cámara al origen)">⟲ Resetear vista</button>
+            <button class="ghost" id="dz3dTop" title="Vista superior (planta)">⬇ Superior</button>
+            <button class="ghost" id="dz3dFront" title="Vista frontal (alzado)">⬛ Frontal</button>
+            <button class="ghost" id="dz3dSide" title="Vista lateral (perfil)">◼ Lateral</button>
+          </div>
+          <div class="dz-hint">🖱 Arrastrá con botón central o derecho para orbitar · Scroll para zoom · Shift+arrastre panea</div>
         </div>
       </div>
       <div class="dz-onionpanel" id="dzRigPanel" hidden>
@@ -522,6 +554,7 @@
     <button class="ibtn" id="tlMove" title="Interpolación de movimiento: 1er clic fija el INICIO del elemento seleccionado, movelo a la posición final y 2do clic genera los cuadros del recorrido"><svg class="ico"><use href="#i-motion"/></svg></button>
     <button class="ibtn" id="tlRec" title="Grabación en vivo: armá la grabación y arrastrá un elemento — el recorrido REAL de tu mano se convierte en cuadros"><svg class="ico"><use href="#i-rec"/></svg></button>
     <button class="ibtn" id="tlPuppet" title="Titiritero: grabá EN VIVO manipulando el muñeco. Apretás REC, movés cabeza/brazos/piezas como una marioneta y LOW captura cada instante como cuadros hasta que parás."><svg class="ico"><use href="#i-hand"/></svg></button>
+    <button class="ibtn" id="tlWalk" title="Ciclo de caminata: generá un ciclo automático de pasos (el elemento seleccionado sube/baja y se inclina rítmicamente)"><svg class="ico"><use href="#i-motion"/></svg>🚶</button>
     <button class="ibtn" id="tlAI" title="Fotograma clave con IA: describí el movimiento y el modelo dibuja la próxima pose"><svg class="ico"><use href="#i-star"/></svg></button>
     <button class="ibtn" id="tlDel" title="Borrar este cuadro"><svg class="ico"><use href="#i-trash"/></svg></button>
     <div class="vsep"></div>
