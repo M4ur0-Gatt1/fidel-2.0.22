@@ -16,7 +16,8 @@ from pathlib import Path
 from typing import List, Dict, Optional, Tuple, Union
 from xml.etree import ElementTree as ET
 
-import numpy as np
+# numpy reemplazado por math puro para compatibilidad PyInstaller
+# (solo se usaba para matrices 3x3 homogéneas)
 
 # ── constantes ──────────────────────────────────────────────────────────
 NS_SVG = "http://www.w3.org/2000/svg"
@@ -38,20 +39,24 @@ class Transform:
     opacity: float = 1.0
     visible: bool = True
 
-    def to_matrix(self) -> np.ndarray:
-        """Devuelve matriz 3×3 homogénea."""
+    def to_matrix(self) -> list:
+        """Devuelve matriz 3×3 homogénea como lista de listas (sin numpy)."""
         a = math.radians(self.rotation)
         cos_r, sin_r = math.cos(a), math.sin(a)
         # scale + rotate
-        m = np.array([
+        m = [
             [self.scale_x * cos_r, -self.scale_y * sin_r, self.x],
             [self.scale_x * sin_r,  self.scale_y * cos_r, self.y],
-            [0, 0, 1]
-        ], dtype=float)
+            [0.0, 0.0, 1.0],
+        ]
         # skew (después de scale/rotate para compat AE)
         if self.skew_x or self.skew_y:
-            m[:2, 0] += m[:2, 1] * math.tan(math.radians(self.skew_x))
-            m[:2, 1] += m[:2, 0] * math.tan(math.radians(self.skew_y))
+            tskew_x = math.tan(math.radians(self.skew_x))
+            tskew_y = math.tan(math.radians(self.skew_y))
+            m[0][0] += m[0][1] * tskew_x
+            m[1][0] += m[1][1] * tskew_x
+            m[0][1] += m[0][0] * tskew_y
+            m[1][1] += m[1][0] * tskew_y
         return m
 
     def to_svg_attr(self) -> str:

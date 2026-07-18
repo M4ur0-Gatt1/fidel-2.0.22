@@ -14,9 +14,6 @@ import json
 import math
 from dataclasses import dataclass, field
 from typing import List, Dict, Optional, Tuple
-import numpy as np
-
-
 @dataclass
 class Constraint:
     """Constraint que limita o guía el movimiento de un hueso."""
@@ -37,32 +34,45 @@ class IK_solver:
         self.upper_bone = upper_bone
         self.lower_bone = lower_bone
         self.effector = effector
-        self.target = np.array(target, dtype=float)
-        self.pole_vector: Optional[np.ndarray] = None  # codo/rodilla (evita pops)
+        self.target = [float(v) for v in target]  # lista en vez de np.array
+        self.pole_vector: Optional[list] = None  # codo/rodilla (evita pops)
         self.stretch: bool = False  # permite estirarse si target está fuera de alcance
         self.stiffness: float = 1.0  # 0-1 resistencia a flexión
 
-    def solve(self, root_pos: np.ndarray, upper_len: float, lower_len: float,
-              current_mid: np.ndarray) -> Tuple[float, float]:
+    def _vec2(self, a, b):
+        """Resta vectorial: a - b, devuelve (dx, dy)."""
+        return (a[0] - b[0], a[1] - b[1])
+
+    def _norm2(self, v):
+        """Norma L2 de vector (x, y)."""
+        return math.hypot(v[0], v[1])
+
+    def _cross2(self, a, b):
+        """Producto cruz 2D escalar: a × b = a.x*b.y - a.y*b.x."""
+        return a[0] * b[1] - a[1] * b[0]
+
+    def _sign(self, x):
+        """Signo: 1 para >=0, -1 para <0 (como np.sign pero sin -0)."""
+        return 1.0 if x >= 0 else -1.0
+
+    def solve(self, root_pos, upper_len: float, lower_len: float,
+              current_mid) -> Tuple[float, float]:
         """Devuelve (angle_upper, angle_lower) en radianes.
-        root_pos: posición del hombro/cadera
-        current_mid: posición actual del codo/rodilla (para determinar lado)"""
+        root_pos: posición del hombro/cadera como (x, y)
+        current_mid: posición actual del codo/rodilla como (x, y)"""
         target = self.target
-        dist = np.linalg.norm(target - root_pos)
+        dist = self._norm2(self._vec2(target, root_pos))
         l1, l2 = upper_len, lower_len
 
         # Si está fuera de alcance
         if dist >= l1 + l2:
             if self.stretch:
-                # Estirar proporcionalmente
                 angle = math.atan2(target[1] - root_pos[1], target[0] - root_pos[0])
                 return angle, 0.0
             angle = math.atan2(target[1] - root_pos[1], target[0] - root_pos[0])
             return angle, 0.0
 
         # Law of cosines
-        # dist^2 = l1^2 + l2^2 - 2*l1*l2*cos(pi - angle_lower)
-        # => cos(angle_lower) = (l1^2 + l2^2 - dist^2) / (2*l1*l2)
         cos_a2 = max(-1.0, min(1.0, (l1**2 + l2**2 - dist**2) / (2 * l1 * l2)))
         angle_lower = math.acos(cos_a2)
 
@@ -71,13 +81,19 @@ class IK_solver:
         angle_to_target = math.atan2(target[1] - root_pos[1], target[0] - root_pos[0])
 
         # Determinar signo según polo (codo/rodilla)
-        mid_target = (target + root_pos) / 2
+        mid_target = ((target[0] + root_pos[0]) / 2, (target[1] + root_pos[1]) / 2)
         if self.pole_vector is not None:
-            side = np.sign(np.cross(self.pole_vector - root_pos, mid_target - root_pos))
+            side = self._sign(self._cross2(
+                self._vec2(self.pole_vector, root_pos),
+                self._vec2(mid_target, root_pos)
+            ))
         else:
-            side = np.sign(np.cross(current_mid - root_pos, mid_target - root_pos))
+            side = self._sign(self._cross2(
+                self._vec2(current_mid, root_pos),
+                self._vec2(mid_target, root_pos)
+            ))
         if side == 0:
-            side = 1
+            side = 1.0
 
         angle_upper = angle_to_target - side * math.acos(cos_a1)
 
@@ -112,9 +128,9 @@ class BoneSystem:
         u_len = math.hypot(upper.x1 - upper.x0, upper.y1 - upper.y0)
         l_len = math.hypot(lower.x1 - lower.x0, lower.y1 - lower.y0)
         # Posición root (hombro)
-        root = np.array([upper.x0, upper.y0], dtype=float)
+        root = (upper.x0, upper.y0)
         # Posición actual del codo (para determinar lado)
-        mid = np.array([upper.x1, upper.y1], dtype=float)
+        mid = (upper.x1, upper.y1)
         angle_u, angle_l = solver.solve(root, u_len, l_len, mid)
         return {solver.upper_bone: angle_u, solver.lower_bone: angle_l}
 
@@ -170,8 +186,8 @@ class BoneSystem:
         return {
             "bones": {k: v.to_dict() for k, v in self.bones.items()},
             "ik_solvers": {k: {"upper": v.upper_bone, "lower": v.lower_bone,
-                               "effector": v.effector, "target": v.target.tolist(),
-                               "stretch": v.stretch, "pole": v.pole_vector.tolist() if v.pole_vector is not None else None}
+                               "effector": v.effector, "target": v.target,
+                               "stretch": v.stretch, "pole": v.pole_vector if v.pole_vector is not None else None}
                           for k, v in self.ik_solvers.items()},
             "constraints": [c.__dict__ for c in self.constraints],
         }
@@ -188,7 +204,7 @@ class BoneSystem:
             s = IK_solver(v["upper"], v["lower"], v["effector"], tuple(v["target"]))
             s.stretch = v.get("stretch", False)
             if v.get("pole"):
-                s.pole_vector = np.array(v["pole"])
+                s.pole_vector = list(v["pole"])
             bs.add_ik(s, k)
         bs.constraints = [Constraint(**c) for c in d.get("constraints", [])]
         return bs
