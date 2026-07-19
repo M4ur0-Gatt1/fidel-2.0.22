@@ -608,6 +608,81 @@ body.light .krow input[type="datetime-local"] { color-scheme: light; }
 .q-row .ibtn .ico { width: 12px; height: 12px; }
 .q-row .q-del:hover { color: var(--red); }
 
+/* ══ Espacio 3D (visor tipo Blender del multiplano) ══ */
+#dz3dStage {
+  position: absolute; inset: 0; overflow: hidden; z-index: 5;
+  perspective: 1400px;
+  background: radial-gradient(ellipse at 50% 42%, rgba(51,181,232,.06), transparent 62%),
+              var(--bg);
+  touch-action: none;                 /* el stylus/tablet orbita sin scrollear */
+}
+.dz3d-world {
+  position: absolute; left: 50%; top: 50%; width: 0; height: 0;
+  transform-style: preserve-3d;
+}
+.dz3d-grid {
+  position: absolute; left: 0; top: 0;
+  background:
+    repeating-linear-gradient(0deg, rgba(255,255,255,.06) 0 1px, transparent 1px 90px),
+    repeating-linear-gradient(90deg, rgba(255,255,255,.06) 0 1px, transparent 1px 90px);
+  border: 1px solid rgba(255,255,255,.08);
+}
+body.light .dz3d-grid {
+  background:
+    repeating-linear-gradient(0deg, rgba(0,0,0,.07) 0 1px, transparent 1px 90px),
+    repeating-linear-gradient(90deg, rgba(0,0,0,.07) 0 1px, transparent 1px 90px);
+  border-color: rgba(0,0,0,.09);
+}
+.dz3d-axis { position: absolute; left: 0; top: 0; pointer-events: none; }
+.dz3d-axis.ax-x { height: 2px; background: linear-gradient(90deg, transparent, #E5484D 30%, #E5484D 70%, transparent); }
+.dz3d-axis.ax-y { width: 2px; background: linear-gradient(180deg, transparent, #46A758 30%, #46A758 70%, transparent); }
+.dz3d-axis.ax-z { height: 2px; background: linear-gradient(90deg, transparent, #3E9FD9 30%, #3E9FD9 70%, transparent); }
+.dz3d-card {
+  position: absolute; left: 50%; top: 50%;
+  background: rgba(255,255,255,.015);
+  outline: 1px solid rgba(255,255,255,.10);
+  transition: outline-color .12s ease;
+}
+body.light .dz3d-card { background: rgba(0,0,0,.015); outline-color: rgba(0,0,0,.12); }
+.dz3d-card.act { outline: 2px solid var(--red); background: rgba(240,69,14,.03); }
+.dz3d-card svg { display: block; cursor: crosshair; }
+.dz3d-tag {
+  position: absolute; left: 0; top: -26px; padding: 2px 9px; white-space: nowrap;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 99px;
+  font: 500 10.5px 'JetBrains Mono', monospace; color: var(--mut);
+  pointer-events: none;
+}
+.dz3d-card.act .dz3d-tag { color: var(--red); border-color: var(--red); }
+.dz3d-gizmo {
+  position: absolute; top: 10px; right: 10px; z-index: 6;
+  display: flex; align-items: center; gap: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 6px 8px;
+}
+.dz3d-gizmo button {
+  background: transparent; border: 1px solid var(--line); border-radius: 7px;
+  padding: 4px 9px; color: var(--mut); font: 500 11px 'Figtree', sans-serif;
+}
+.dz3d-gizmo button:hover { color: var(--txt); border-color: var(--mut); }
+.dz3d-gizmo button.active { color: var(--red); border-color: var(--red); background: var(--redsoft); }
+.dz3d-gizmo .dz3d-x { display: inline-flex; align-items: center; padding: 4px 6px; }
+.dz3d-gizmo .dz3d-x .ico { width: 12px; height: 12px; }
+.dz3d-axlbl { font: 700 11px 'JetBrains Mono', monospace; }
+.dz3d-axlbl.x { color: #E5484D; }
+.dz3d-axlbl.y { color: #46A758; }
+.dz3d-axlbl.z { color: #3E9FD9; }
+.dz3d-zbar {
+  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 6;
+  display: flex; align-items: center; gap: 8px; max-width: 92%;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 7px 12px;
+}
+.dz3d-zbar input[type="range"] { width: 220px; accent-color: #3E9FD9; }
+.dz3d-zname {
+  font: 600 11px 'JetBrains Mono', monospace; color: var(--txt);
+  max-width: 160px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
 /* visor de artefactos (render en vivo dentro de Fidel) */
 #artView {
   position: fixed; inset: 0; z-index: 60; background: var(--bg);

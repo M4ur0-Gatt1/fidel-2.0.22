@@ -6162,8 +6162,7 @@ function dz3dWireCard(card, cs, el, i) {
       const pts = [[e.offsetX, e.offsetY, e.pressure || 0.5]];
       const live = document.createElementNS(SVGNS, "path");
       live.setAttribute("fill", "none");
-      live.setAttribute("stroke", $("#dzPFill") && tool === "brush"
-        ? ($("#dzPStroke").value || "#1a1a1a") : ($("#dzPStroke").value || "#1a1a1a"));
+      live.setAttribute("stroke", $("#dzPStroke").value || "#1a1a1a");
       live.setAttribute("stroke-width", +$("#dzDrawW").value || 6);
       live.setAttribute("stroke-linecap", "round");
       live.setAttribute("opacity", "0.8");
