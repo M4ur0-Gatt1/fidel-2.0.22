@@ -46,7 +46,7 @@ ASSET_EXT = {".svg", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".bmp",
 LANG_BY_EXT = {".py": "python", ".js": "javascript", ".ts": "javascript",
                ".sh": "bash", ".ps1": "powershell"}
 
-LOW_VERSION = "3.19.0"
+LOW_VERSION = "3.20.0"
 
 # Desafío por defecto del comparador: verificable automáticamente
 DEFAULT_TASK = ("Escribe un programa Python que imprima los primeros 10 numeros "
@@ -970,27 +970,152 @@ class Api:
         "high":   {"filter_speckle": 3,  "color_precision": 8, "path_precision": 8},
     }
 
-    def _vectorize(s, png_bytes, detail="medium"):
+    _VTRACE_KEY = (255, 0, 254)   # magenta imposible: marca el fondo eliminado
+
+    def _prep_raster(s, png_bytes, mode="color", remove_bg=False, bg_tol=32):
+        """Preprocesa el raster antes de trazar (Pillow + numpy).
+
+        - remove_bg: detecta el color de fondo por las 4 esquinas y lo vuelve
+          color llave con tolerancia (la varita mágica de Photoshop, global) —
+          después _strip_key_paths borra esos paths del SVG.
+        - mode='lineas': luminancia → umbral de Otsu → tinta negra pura, para
+          CALCAR solo las líneas del dibujo (line-art/boceto).
+        Devuelve (png_bytes, key_color|None).
+        """
+        import io
+        import numpy as np
+        from PIL import Image
+        img = Image.open(io.BytesIO(png_bytes)).convert("RGBA")
+        if max(img.size) > 1600:                    # velocidad y menos ruido
+            img.thumbnail((1600, 1600), Image.LANCZOS)
+        a = np.asarray(img).astype(np.int16).copy()  # H×W×4
+
+        KEY = s._VTRACE_KEY
+        key_used = False
+        if remove_bg:
+            corners = np.array([a[0, 0, :3], a[0, -1, :3], a[-1, 0, :3], a[-1, -1, :3]])
+            bg = np.median(corners, axis=0)
+            mask = (np.abs(a[..., :3] - bg).sum(axis=-1) <= int(bg_tol) * 3) | (a[..., 3] < 40)
+            a[mask] = (*KEY, 255)
+            key_used = True
+        else:
+            mask = a[..., 3] < 40                   # PNG con transparencia previa
+            if mask.any():
+                a[mask] = (*KEY, 255)
+                key_used = True
+
+        if mode == "lineas":
+            rgb = a[..., :3].astype(np.float32)
+            # redondear: el umbral de Otsu es un índice de bin entero — con
+            # floats, la tinta del bin exacto quedaba afuera de lum <= t
+            lum = np.round(rgb[..., 0] * 0.299 + rgb[..., 1] * 0.587 + rgb[..., 2] * 0.114)
+            if key_used:
+                lum[np.all(a[..., :3] == KEY, axis=-1)] = 255   # el fondo es papel
+            hist, _ = np.histogram(lum, bins=256, range=(0, 255))
+            total, sum_all = lum.size, float((np.arange(256) * hist).sum())
+            best_t, best_v, wB, sumB = 128, -1.0, 0.0, 0.0
+            for t in range(256):                    # umbral de Otsu
+                wB += hist[t]
+                if wB == 0:
+                    continue
+                wF = total - wB
+                if wF == 0:
+                    break
+                sumB += t * hist[t]
+                mB, mF = sumB / wB, (sum_all - sumB) / wF
+                v = wB * wF * (mB - mF) ** 2
+                if v > best_v:
+                    best_v, best_t = v, t
+            out = np.full(a.shape, 255, dtype=np.uint8)
+            out[lum <= best_t] = (0, 0, 0, 255)
+            buf = io.BytesIO()
+            Image.fromarray(out, "RGBA").convert("RGB").save(buf, "PNG")
+            return buf.getvalue(), None             # binario: sin color llave
+
+        buf = io.BytesIO()
+        Image.fromarray(a.astype(np.uint8), "RGBA").convert("RGB").save(buf, "PNG")
+        return buf.getvalue(), (KEY if key_used else None)
+
+    @staticmethod
+    def _strip_key_paths(svg, key):
+        """Borra del SVG trazado los paths del color llave (el fondo quitado)."""
+        kr, kg, kb = key
+
+        def repl(m):
+            tag = m.group(0)
+            fm = re.search(r'fill="#?([0-9a-fA-F]{6})"', tag)
+            if not fm:
+                return tag
+            h = fm.group(1)
+            r_, g_, b_ = int(h[:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+            return "" if abs(r_ - kr) + abs(g_ - kg) + abs(b_ - kb) <= 48 else tag
+        return re.sub(r"<path\b[^>]*/?>", repl, svg)
+
+    @staticmethod
+    def _vtrace_safe(tin, tout, kwargs):
+        """Corre vtracer sin arriesgar el proceso de LOW. Devuelve error o None.
+
+        El binding PyO3 de vtracer 0.6.x CRASHEA el intérprete entero (access
+        violation, imposible de atrapar) en Python >= 3.14. En el .exe
+        congelado (CI usa 3.11/3.12) es seguro en-proceso; corriendo desde
+        source con 3.14+ se aísla en un subproceso: si revienta, muere el
+        hijo y LOW sigue vivo."""
+        if sys.version_info < (3, 14):
+            import vtracer                     # exe de CI (3.11) y source ≤3.13
+            vtracer.convert_image_to_svg_py(tin, tout, **kwargs)
+            return None
+        if getattr(sys, "frozen", False):      # exe compilado con 3.14: ni intentar
+            return ("vtracer es incompatible con Python 3.14 (crash nativo) — "
+                    "este .exe se compiló con 3.14; el de GitHub Actions (3.11) "
+                    "no tiene el problema")
+        import subprocess
+        code = ("import json,sys,vtracer;a=json.loads(sys.argv[1]);"
+                "vtracer.convert_image_to_svg_py(a['tin'],a['tout'],**a['kw'])")
+        arg = json.dumps({"tin": tin, "tout": tout, "kw": kwargs})
+        r = subprocess.run([sys.executable, "-c", code, arg],
+                           capture_output=True, timeout=180)
+        if r.returncode != 0:
+            return (f"vtracer se cayó (código {r.returncode}) — el paquete es "
+                    f"incompatible con Python {sys.version_info.major}."
+                    f"{sys.version_info.minor}; el .exe de LOW no tiene este "
+                    "problema, o usá Python 3.13 o anterior")
+        return None
+
+    def _vectorize(s, png_bytes, detail="medium", mode="color",
+                   remove_bg=False, bg_tol=32):
         """PNG/JPG (bytes) → (svg_str, error). vtracer local (offline, gratis)
-        primero; si no está, fal.ai recraft/vectorize (IA, needs key)."""
+        primero; si no está, fal.ai recraft/vectorize (IA, needs key).
+        mode: 'color' (formas por color) | 'lineas' (calca solo el trazo)."""
         opt = s._VTRACE_PRESETS.get(detail, s._VTRACE_PRESETS["medium"])
+        key = None
+        try:
+            png_bytes, key = s._prep_raster(png_bytes, mode, remove_bg, bg_tol)
+        except Exception as e:
+            log(f"prep raster (sigo sin preproceso): {e}")
+        last_err = None
         try:
             import tempfile
-            import vtracer
             tin = Path(tempfile.mktemp(suffix=".png"))
             tout = Path(tempfile.mktemp(suffix=".svg"))
             tin.write_bytes(png_bytes)
-            vtracer.convert_image_to_svg_py(str(tin), str(tout), colormode="color",
-                                            mode="spline", hierarchical="stacked", **opt)
-            svg = tout.read_text(encoding="utf-8", errors="replace")
+            last_err = s._vtrace_safe(str(tin), str(tout), dict(
+                colormode="binary" if mode == "lineas" else "color",
+                mode="spline", hierarchical="stacked", **opt))
+            svg = "" if last_err or not tout.exists() \
+                else tout.read_text(encoding="utf-8", errors="replace")
             for f in (tin, tout):
                 try:
                     f.unlink()
                 except OSError:
                     pass
-            if "<svg" in svg:
+            if last_err:
+                log(f"vtracer: {last_err}")
+            elif "<svg" in svg:
+                if key:
+                    svg = s._strip_key_paths(svg, key)
                 return svg, None
         except Exception as e:
+            last_err = str(e)[:200]
             log(f"vtracer no disponible/falló: {e}")
         # fallback: fal.ai recraft (vectorizador neural)
         if s.cfg.get_api_key("fal"):
@@ -1002,7 +1127,7 @@ class Api:
                 except Exception:
                     return None, "fal devolvió un formato inesperado"
             return None, err
-        return None, ("vectorización no disponible: instalá vtracer "
+        return None, (last_err or "vectorización no disponible: instalá vtracer "
                       "(pip install vtracer) o cargá una API key de fal.ai en ⚙")
 
     def _read_img_bytes(s, image):
@@ -1022,12 +1147,15 @@ class Api:
         except OSError as e:
             return None, str(e)
 
-    def vectorize_image(s, image, detail="medium"):
+    def vectorize_image(s, image, detail="medium", mode="color",
+                        remove_bg=False, bg_tol=32):
         """API para el frontend: raster (data URL o ruta) → {svg} editable."""
         raw, err = s._read_img_bytes(image)
         if err:
             return {"error": err}
-        svg, err = s._vectorize(raw, detail)
+        svg, err = s._vectorize(raw, detail, mode=mode or "color",
+                                remove_bg=bool(remove_bg),
+                                bg_tol=int(bg_tol or 32))
         return {"svg": svg} if svg else {"error": err or "no se pudo vectorizar"}
 
     # ── escena de animación: cámara, claves y easing por secuencia ──────
@@ -1916,7 +2044,7 @@ class Api:
             {"type": "function", "function": {"name": "web_search", "description": "Busca en internet (DuckDuckGo, sin API key) y devuelve los primeros resultados con título, URL y resumen. Usalo para info actual, documentación, precios, noticias, etc. Después podés leer una URL con web_fetch.", "parameters": {"type": "object", "properties": {"query": {"type": "string"}}, "required": ["query"]}}},
             {"type": "function", "function": {"name": "web_fetch", "description": "Descarga una URL y devuelve su texto legible (quita HTML/scripts). Usalo para LEER una página, doc o API pública. Devuelve hasta ~8000 caracteres.", "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
             {"type": "function", "function": {"name": "ask_model", "description": "Delega una SUBTAREA a OTRO modelo para AHORRAR recursos: mandá lo simple/mecánico a uno barato o rápido y reservá el modelo actual (caro) para lo complejo. Devuelve la respuesta de ese modelo como texto para que la uses. 'provider' = uno de los configurados con key (ej. groq, digitalocean, siliconflow, deepseek, glm, qwen, nvidia, custom). 'model' opcional (default: el rápido del proveedor). Ideal para: resumir, traducir, reformatear, generar texto trivial, clasificar, listar ideas, boilerplate. NO delegues tareas que necesiten tus herramientas (archivos, git, imagenes). Podés hacer varias ask_model en paralelo mental para comparar respuestas.", "parameters": {"type": "object", "properties": {"provider": {"type": "string", "description": "proveedor destino (con key configurada)"}, "prompt": {"type": "string", "description": "la subtarea, autocontenida (incluí todo el contexto que el otro modelo necesita)"}, "model": {"type": "string", "description": "modelo especifico del proveedor (opcional)"}}, "required": ["provider", "prompt"]}}},
-            {"type": "function", "function": {"name": "vectorize", "description": "Convierte una imagen raster del workspace (PNG/JPG) en un SVG VECTORIAL EDITABLE (la 'calca'). Usalo para NO escribir coordenadas SVG a mano (eso sale tosco): parti de una foto, boceto o imagen generada y obtene vectores limpios y editables. 'detail': low|medium|high (mas detalle = mas trazos). Guarda el .svg en el workspace y lo abre en el editor de vectores.", "parameters": {"type": "object", "properties": {"image": {"type": "string", "description": "ruta a la imagen PNG/JPG en el workspace"}, "out": {"type": "string", "description": "ruta .svg destino (opcional)"}, "detail": {"type": "string"}}, "required": ["image"]}}},
+            {"type": "function", "function": {"name": "vectorize", "description": "Convierte una imagen raster del workspace (PNG/JPG) en un SVG VECTORIAL EDITABLE (la 'calca'). Usalo para NO escribir coordenadas SVG a mano (eso sale tosco): parti de una foto, boceto o imagen generada y obtene vectores limpios y editables. 'detail': low|medium|high (mas detalle = mas trazos). Guarda el .svg en el workspace y lo abre en el editor de vectores.", "parameters": {"type": "object", "properties": {"image": {"type": "string", "description": "ruta a la imagen PNG/JPG en el workspace"}, "out": {"type": "string", "description": "ruta .svg destino (opcional)"}, "detail": {"type": "string"}, "mode": {"type": "string", "description": "color (formas por color, default) | lineas (calca SOLO el trazo/tinta — ideal para line-art y bocetos)"}, "remove_bg": {"type": "boolean", "description": "true: quita el fondo detectado por las esquinas antes de trazar (como la varita de Photoshop)"}, "bg_tol": {"type": "integer", "description": "tolerancia del fondo 4-96 (default 32)"}}, "required": ["image"]}}},
             {"type": "function", "function": {"name": "illustrate", "description": "LA MEJOR forma de crear una ILUSTRACION sofisticada como VECTOR editable: genera un raster de alta calidad con IA (diffusion) desde tu descripcion y lo VECTORIZA a SVG. Evita el SVG tosco escrito a mano — usalo en vez de dibujar paths cuando quieras algo pulido (personajes, escenas, logos con detalle). 'prompt' detallado (estilo, colores, composicion, fondo). 'detail': low|medium|high. Guarda y abre el .svg editable en el editor ✒.", "parameters": {"type": "object", "properties": {"prompt": {"type": "string"}, "out": {"type": "string", "description": "ruta .svg destino (opcional)"}, "detail": {"type": "string"}, "size": {"type": "string", "description": "ej 1024x1024"}}, "required": ["prompt"]}}},
             {"type": "function", "function": {"name": "anim", "description": "Estudio de ANIMACION 2D profesional (motor propio de LOW: timeline, rigging con huesos/IK, compositor de nodos, export MP4/GIF/Lottie). Ideal para ANIMAR los SVG que diseñás. Acciones (campo 'action') con sus 'params': 'new' {name,width,height,fps,duration} crea un proyecto en el workspace; 'add_actor' {layer,name,svg_path (ruta a un .svg del workspace) o svg (inline),x,y}; 'keyframe' {actor,frame,x,y,rotation,scale_x,scale_y,opacity} pone un cuadro clave; 'walk_cycle' {actor,start,duration} ciclo de caminata automatico; 'render' {output,format(mp4/gif/png),preset(hd/web/4k/gif)} exporta el video; 'storyboard' {script} arma un storyboard desde un guion. Flujo tipico: diseñá el personaje (generate_image/save_character), guardalo como SVG, luego anim new -> add_actor -> keyframe/walk_cycle -> render.", "parameters": {"type": "object", "properties": {"action": {"type": "string", "description": "new | add_actor | keyframe | walk_cycle | render | storyboard"}, "params": {"type": "object", "description": "campos segun la accion (ver descripcion)"}}, "required": ["action"]}}},
         ]
@@ -2372,7 +2500,10 @@ class Api:
                 raw, err = s._read_img_bytes(s._arg_path(args) or args.get("image"))
                 if err:
                     return f"❌ {err}"
-                svg, err = s._vectorize(raw, args.get("detail", "medium"))
+                svg, err = s._vectorize(raw, args.get("detail", "medium"),
+                                        mode=args.get("mode", "color"),
+                                        remove_bg=bool(args.get("remove_bg")),
+                                        bg_tol=int(args.get("bg_tol") or 32))
                 if not svg:
                     return f"❌ {err}"
                 rel = args.get("out") or f"disenos/vector_{datetime.datetime.now().strftime('%H%M%S')}.svg"

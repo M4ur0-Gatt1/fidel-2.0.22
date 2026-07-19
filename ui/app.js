@@ -2756,29 +2756,74 @@ async function dzVectorize() {
   const href = img.getAttribute("href") ||
     img.getAttributeNS("http://www.w3.org/1999/xlink", "href");
   if (!href) return dzSetStatus("La imagen no tiene datos para vectorizar");
-  dzSetStatus("✒ Vectorizando la imagen a trazos editables…");
-  const r = await api.vectorize_image(href, "high");
-  if (!r || r.error) return dzSetStatus("❌ " + ((r && r.error) || "no se pudo vectorizar"));
-  let traced;
-  try { traced = new DOMParser().parseFromString(r.svg, "image/svg+xml").querySelector("svg"); }
-  catch (e) { return dzSetStatus("❌ el vectorizador devolvió SVG inválido"); }
-  if (!traced) return dzSetStatus("❌ el vectorizador no devolvió SVG");
-  const tw = parseFloat(traced.getAttribute("width")) || 512;
-  const th = parseFloat(traced.getAttribute("height")) || 512;
-  const ix = parseFloat(img.getAttribute("x")) || 0, iy = parseFloat(img.getAttribute("y")) || 0;
-  const iw = parseFloat(img.getAttribute("width")) || tw;
-  const ih = parseFloat(img.getAttribute("height")) || (iw * th / tw);
-  dzSnapshot();
-  const g = document.createElementNS(SVGNS, "g");
-  g.setAttribute("transform", `translate(${ix} ${iy}) scale(${iw / tw} ${ih / th})`);
-  [...traced.childNodes].forEach(n => {
-    if (n.nodeType === 1 && n.tagName.toLowerCase() !== "title")
-      g.appendChild(document.importNode(n, true));
-  });
-  img.parentNode.insertBefore(g, img.nextSibling);
-  img.remove();
-  dzSelect(g); dzMarkDirty(); dzBuildLayers();
-  dzSetStatus(`✒ Vectorizado: ${g.querySelectorAll("path").length} trazos editables (reemplazó la imagen)`);
+  openModal(`<h2>Calcar a vectores</h2>
+    <div class="sub">Convierte la imagen en trazos SVG editables siguiendo sus
+    líneas y colores. «Líneas» calca solo el trazo (tinta) — ideal para bocetos,
+    line-art y dibujos complejos; «Color» arma formas planas por color, como un
+    póster serigrafiado.</div>
+    <div class="krow"><label>Modo</label>
+      <select id="vzMode" class="langsel">
+        <option value="lineas">Líneas — sigue el trazo del dibujo (tinta)</option>
+        <option value="color" selected>Color — formas planas por color</option>
+      </select>
+      <label class="soc-l2">Detalle</label>
+      <select id="vzDetail" class="langsel">
+        <option value="low">Bajo (simple)</option>
+        <option value="medium">Medio</option>
+        <option value="high" selected>Alto (complejo)</option>
+      </select></div>
+    <div class="krow"><label>Fondo</label>
+      <label class="agchk"><input type="checkbox" id="vzBg" checked>
+        quitar el fondo antes de calcar (detecta el color de las esquinas,
+        como la varita mágica de Photoshop)</label></div>
+    <div class="krow"><label>Tolerancia</label>
+      <input type="range" id="vzTol" min="4" max="96" value="32" style="flex:1"
+        title="Cuánto puede variar el color del fondo para ser eliminado">
+      <span class="dz-hint" id="vzTolLbl">32</span></div>
+    <div class="krow"><label>Referencia</label>
+      <label class="agchk"><input type="checkbox" id="vzKeep">
+        conservar la imagen original debajo (semitransparente, para seguir
+        calcando encima)</label></div>
+    <div class="m-actions">
+      <button class="ghost" id="mCancel">Cancelar</button>
+      <button class="primary" id="vzGo">Calcar</button>
+    </div>`);
+  $("#mCancel").onclick = closeModal;
+  $("#vzTol").oninput = e => { $("#vzTolLbl").textContent = e.target.value; };
+  $("#vzGo").onclick = async () => {
+    const mode = $("#vzMode").value, detail = $("#vzDetail").value;
+    const rmBg = $("#vzBg").checked, tol = +$("#vzTol").value;
+    const keep = $("#vzKeep").checked;
+    closeModal();
+    dzSetStatus(mode === "lineas"
+      ? "✒ Calcando las líneas del dibujo…"
+      : "✒ Calcando la imagen a formas de color…");
+    const r = await api.vectorize_image(href, detail, mode, rmBg, tol);
+    if (!r || r.error) return dzSetStatus("❌ " + ((r && r.error) || "no se pudo vectorizar"));
+    let traced;
+    try { traced = new DOMParser().parseFromString(r.svg, "image/svg+xml").querySelector("svg"); }
+    catch (e) { return dzSetStatus("❌ el vectorizador devolvió SVG inválido"); }
+    if (!traced) return dzSetStatus("❌ el vectorizador no devolvió SVG");
+    const tw = parseFloat(traced.getAttribute("width")) || 512;
+    const th = parseFloat(traced.getAttribute("height")) || 512;
+    const ix = parseFloat(img.getAttribute("x")) || 0, iy = parseFloat(img.getAttribute("y")) || 0;
+    const iw = parseFloat(img.getAttribute("width")) || tw;
+    const ih = parseFloat(img.getAttribute("height")) || (iw * th / tw);
+    dzSnapshot();
+    const g = document.createElementNS(SVGNS, "g");
+    g.setAttribute("transform", `translate(${ix} ${iy}) scale(${iw / tw} ${ih / th})`);
+    [...traced.childNodes].forEach(n => {
+      if (n.nodeType === 1 && n.tagName.toLowerCase() !== "title")
+        g.appendChild(document.importNode(n, true));
+    });
+    img.parentNode.insertBefore(g, img.nextSibling);
+    if (keep) img.setAttribute("opacity", "0.35");   // queda de referencia para calcar
+    else img.remove();
+    dzSelect(g); dzMarkDirty(); dzBuildLayers();
+    const n = g.querySelectorAll("path").length;
+    dzSetStatus(`✒ Calco listo: ${n} trazo${n === 1 ? "" : "s"} editable${n === 1 ? "" : "s"}` +
+      (keep ? " — la imagen quedó debajo como referencia" : " (reemplazó la imagen)"));
+  };
 }
 
 /* ── coloreado inteligente / entintado con IA (FLUX Kontext / SiliconFlow) ── */
