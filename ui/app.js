@@ -4496,13 +4496,48 @@ function dzInflatorUp(e) {
    el grosor del trazo (stroke-width) en tiempo real. ── */
 let HANDLER = null;   // { el, startW }
 
+/* Elige la LÍNEA (elemento con trazo) más cercana al cursor, no el relleno de
+   fondo. Antes las herramientas de línea usaban elementFromPoint crudo → al no
+   pegarle justo al trazo fino agarraban el rectángulo de fondo (falso positivo).
+   1) si el elemento bajo el cursor tiene trazo, ese; 2) si no, el path/línea
+   con stroke MÁS CERCANO dentro de una tolerancia. */
+function dzStroked(el) {
+  if (!el || !el.getAttribute) return false;
+  const s = el.getAttribute("stroke");
+  const t = el.tagName.toLowerCase();
+  return s && s !== "none" &&
+    ["path", "line", "polyline", "polygon", "circle", "ellipse", "rect"].includes(t);
+}
+function dzPickStroke(clientX, clientY, maxPx) {
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (!svg) return null;
+  const el = document.elementFromPoint(clientX, clientY);
+  if (el && el.closest && el.closest("#dzCanvas svg") && !el.closest("g.dz-onion")) {
+    const s = el.closest("path,line,polyline,polygon,circle,ellipse,rect,text");
+    if (s && s.tagName.toLowerCase() !== "svg" && dzStroked(s) && !s.hasAttribute("data-locked")) return s;
+  }
+  // nadie con trazo justo debajo → el más cercano por distancia (unidades usuario)
+  const p = dzToUser(clientX, clientY);
+  const tol = (maxPx || 16) / (DZ.zoom || 1);
+  let best = null, bestD = tol;
+  svg.querySelectorAll("path,line,polyline,polygon").forEach(c => {
+    if (!dzStroked(c) || c.hasAttribute("data-locked") || (c.closest && c.closest("g.dz-onion"))) return;
+    let L; try { L = c.getTotalLength(); } catch (err) { return; }
+    if (!L) return;
+    const step = Math.max(2, L / 160);
+    for (let d = 0; d <= L; d += step) {
+      const q = c.getPointAtLength(d);
+      const dist = Math.hypot(q.x - p.x, q.y - p.y);
+      if (dist < bestD) { bestD = dist; best = c; }
+    }
+  });
+  return best;
+}
 function dzHandlerDown(e) {
   e.preventDefault(); e.stopPropagation();
-  // buscar elemento de trazo debajo del cursor
-  const el = document.elementFromPoint(e.clientX, e.clientY);
-  if (!el || !el.closest || !el.closest("#dzCanvas svg") || el.closest("g.dz-onion")) return;
-  const strokeEl = el.closest("path,line,rect,circle,ellipse,polygon,polyline,text");
-  if (!strokeEl || strokeEl.tagName.toLowerCase() === "svg") return;
+  // buscar la LÍNEA más cercana (no el fondo)
+  const strokeEl = dzPickStroke(e.clientX, e.clientY);
+  if (!strokeEl) return dzSetStatus("📏 Acercate más a una línea para ajustar su grosor");
   dzSnapshot();
   const sw = parseFloat(strokeEl.getAttribute("stroke-width") || getComputedStyle(strokeEl).strokeWidth || "2");
   HANDLER = { el: strokeEl, startW: isNaN(sw) ? 2 : sw, startY: e.clientY };
@@ -4532,17 +4567,9 @@ function dzHandlerGlobalMove(e) {
 
 function dzIronDown(e) {
   e.preventDefault(); e.stopPropagation();
-  const el = document.elementFromPoint(e.clientX, e.clientY);
-  if (!el || !el.closest || !el.closest("#dzCanvas svg") || el.closest("g.dz-onion")) return;
-  const pathEl = el.closest("path");
-  if (!pathEl || pathEl.getAttribute("data-low") !== "brush") {
-    // también funciona sobre paths con stroke
-    const anyPath = el.closest("path,line,polyline");
-    if (!anyPath) return;
-    dzIronSmooth(anyPath);
-    return;
-  }
-  dzIronSmooth(pathEl);
+  const el = dzPickStroke(e.clientX, e.clientY);
+  if (!el) return dzSetStatus("🔥 Acercate a un trazo para suavizarlo");
+  dzIronSmooth(el);
 }
 
 function dzIronSmooth(el) {
@@ -4583,10 +4610,9 @@ function dzPathToPoints(d) {
 
 function dzPliersDown(e) {
   e.preventDefault(); e.stopPropagation();
-  const el = document.elementFromPoint(e.clientX, e.clientY);
-  if (!el || !el.closest || !el.closest("#dzCanvas svg") || el.closest("g.dz-onion")) return;
-  const pathEl = el.closest("path");
-  if (!pathEl) return dzSetStatus("✂ Hacé clic sobre un trazado (path) para cortarlo");
+  const pathEl = dzPickStroke(e.clientX, e.clientY);
+  if (!pathEl || pathEl.tagName.toLowerCase() !== "path")
+    return dzSetStatus("✂ Acercate al borde de un trazado (path) para cortarlo");
   dzSnapshot();
   const p = dzToUser(e.clientX, e.clientY);
   const cmds = dzPathParse(pathEl.getAttribute("d") || "");

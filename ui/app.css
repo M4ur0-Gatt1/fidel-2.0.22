@@ -1349,6 +1349,10 @@ body.light .dz3d-card { background: rgba(0,0,0,.015); outline-color: rgba(0,0,0,
   position: fixed; inset: 0; z-index: 999; background: #0B0B0C;
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 14px; animation: lowSplashOut .5s ease 1.3s forwards;
+  pointer-events: none;   /* NUNCA intercepta clics: si la animación de salida
+                             no termina (pestaña en 2º plano, reduced-motion…),
+                             el splash quedaba tapando el lienzo y "no andaba
+                             ningún botón". Ahora es puramente visual. */
 }
 #lowSplash svg { width: min(46vw, 360px); height: auto; }
 #lowSplash .sp-l { fill: #fff; font: 900 128px 'Figtree', 'Arial Black', sans-serif; }
