@@ -668,6 +668,7 @@ $("#dzDiscBtn").onclick = () => dzDiscToggle();
   });
   // X-sheet: toggle, cerrar y arrastre del panel
   $("#tlXs").onclick = dzXsToggle;
+  $("#tlLayers").onclick = dzTlGridToggle;
   $("#dzXsClose").onclick = () => { $("#dzXsheet").hidden = true; $("#tlXs").classList.remove("active"); };
   $("#dzXsHead").addEventListener("mousedown", (e) => {
     if (e.target.id === "dzXsClose") return;
@@ -4805,6 +4806,7 @@ async function dzTimelineRefresh() {
   dzTimelineBadges();
   dzSbFrame();
   dzXsRender();
+  if (!$("#dzTlGrid").hidden) dzTlGridRender();   // timeline por capas al día
 }
 /* miniatura del cuadro dentro del chip de la timeline (estilo X-sheet) */
 async function dzThumbInto(chip, f, i) {
@@ -6331,6 +6333,104 @@ async function dzXsThumbInto(cell, f, i) {
   svg.removeAttribute("width"); svg.removeAttribute("height");
   svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
   cell.innerHTML = ""; cell.appendChild(svg);
+}
+
+/* ══ TIMELINE POR CAPAS × cuadros (estilo Toon Boom) ═══════════════════════
+   Filas = capas (por id, unidas entre cuadros); columnas = cuadros. La celda
+   se marca si esa capa existe en ese cuadro. La profundidad Z de cada capa es
+   la MISMA data-z que usa el diorama/multiplano (coherente). ══ */
+function dzTlGridToggle() {
+  const g = $("#dzTlGrid");
+  g.hidden = !g.hidden;
+  const b = $("#tlLayers"); if (b) b.classList.toggle("active", !g.hidden);
+  if (!g.hidden) { if (!DZ.anim) dzAnimToggle(); dzTlGridRender(); }
+}
+async function dzTlFrameSvgs() {
+  const out = [];
+  for (let i = 0; i < DZ.anim.frames.length; i++) {
+    const f = DZ.anim.frames[i];
+    let txt = DZ.anim.cache[f];
+    if (!txt) {
+      if (i === DZ.anim.idx) { const s = $("#dzCanvas").querySelector("svg"); txt = s ? dzSerialize(s) : ""; }
+      else { const r = await api.image_data(f); txt = (r && r.svg) || ""; }
+      if (txt) DZ.anim.cache[f] = txt;
+    }
+    out.push(txt);
+  }
+  return out;
+}
+function dzTlKeysOf(svgText) {
+  const set = new Set();
+  const doc = new DOMParser().parseFromString(svgText || "<svg/>", "image/svg+xml");
+  const s = doc.querySelector("svg");
+  if (s) [...s.children].forEach(n => {
+    const t = n.tagName.toLowerCase();
+    if (DZ_SKIP_TAGS.includes(t)) return;
+    const cls = (n.getAttribute && n.getAttribute("class")) || "";
+    if (/dz-onion|dz-penui/.test(cls)) return;
+    set.add(n.id ? "#" + n.id : "(sin nombre)");
+  });
+  return set;
+}
+async function dzTlGridRender() {
+  const g = $("#dzTlGrid");
+  if (!g || g.hidden || !DZ.anim) return;
+  const svgs = await dzTlFrameSvgs();
+  const perFrame = svgs.map(dzTlKeysOf);
+  const order = [];
+  perFrame.forEach(set => set.forEach(k => { if (!order.includes(k)) order.push(k); }));
+  order.reverse();   // al frente arriba (como Illustrator/PS)
+  const cur = DZ.anim.idx;
+  // columnas (números de cuadro)
+  $("#dzTlgCols").innerHTML = DZ.anim.frames.map((f, i) =>
+    `<span class="dz-tlg-col${i === cur ? " cur" : ""}" data-i="${i}">${i + 1}</span>`).join("");
+  // capas del cuadro actual (para Z/visibilidad en vivo)
+  const liveSvg = $("#dzCanvas").querySelector("svg");
+  const rows = $("#dzTlgRows");
+  rows.innerHTML = "";
+  order.forEach(key => {
+    const row = document.createElement("div");
+    row.className = "dz-tlg-row";
+    const id = key.startsWith("#") ? key.slice(1) : null;
+    const liveEl = id && liveSvg ? liveSvg.querySelector("#" + CSS.escape(id)) : null;
+    const z = liveEl ? (parseFloat(liveEl.getAttribute("data-z")) || 0) : 0;
+    const hidden = liveEl && liveEl.getAttribute("display") === "none";
+    // panel izquierdo de la capa: 👁 · nombre · Z (coherente con el diorama)
+    const head = document.createElement("div");
+    head.className = "dz-tlg-lhead";
+    head.innerHTML =
+      `<span class="dz-eye" title="${hidden ? "Mostrar" : "Ocultar"}">${hidden ? "◌" : "👁"}</span>` +
+      `<span class="dz-tlg-name" title="${key}">${key}</span>` +
+      `<input class="dz-tlg-z" type="number" step="10" value="${z}" title="Profundidad Z (multiplano) — la misma del diorama"${liveEl ? "" : " disabled"}>`;
+    head.querySelector(".dz-eye").onclick = () => {
+      if (!liveEl) return; dzSnapshot();
+      hidden ? liveEl.removeAttribute("display") : liveEl.setAttribute("display", "none");
+      dzMarkDirty(); dzTlGridRender();
+    };
+    head.querySelector(".dz-tlg-z").onchange = (e) => {
+      if (!liveEl) return; dzSnapshot();
+      const v = Math.max(-60, Math.min(400, Math.round(+e.target.value || 0)));
+      if (v === 0) liveEl.removeAttribute("data-z"); else liveEl.setAttribute("data-z", v);
+      dzMarkDirty(); dzBuildLayers();
+      if (DZ.d3) dz3dBuild();               // el diorama/3D refleja el Z al instante
+      dzZPanelRender();
+    };
+    row.appendChild(head);
+    // celdas por cuadro
+    const cells = document.createElement("div");
+    cells.className = "dz-tlg-cells";
+    perFrame.forEach((set, i) => {
+      const c = document.createElement("span");
+      c.className = "dz-tlg-cell" + (set.has(key) ? " on" : "") + (i === cur ? " cur" : "");
+      c.dataset.i = i;
+      c.onclick = () => { dzAnimStopIf(); dzGoFrame(i); };
+      cells.appendChild(c);
+    });
+    row.appendChild(cells);
+    rows.appendChild(row);
+  });
+  $("#dzTlgCols").querySelectorAll(".dz-tlg-col").forEach(c =>
+    c.onclick = () => { dzAnimStopIf(); dzGoFrame(+c.dataset.i); });
 }
 
 /* ══ 🪞 modo espejo: lápiz/pincel/pluma dibujan también reflejados sobre el

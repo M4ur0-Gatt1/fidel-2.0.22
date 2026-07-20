@@ -576,6 +576,7 @@
     <div class="vsep"></div>
     <button class="ibtn active" id="tlOnion" title="Papel cebolla: mostrar/ocultar (el panel flotante lo personaliza)"><svg class="ico"><use href="#i-onion"/></svg></button>
     <button class="ibtn" id="tlXs" title="X-sheet: planilla de exposición vertical (cuadros, claves y cámara)"><svg class="ico"><use href="#i-xsheet"/></svg></button>
+    <button class="ibtn" id="tlLayers" title="Timeline por CAPAS: filas = capas, columnas = cuadros (como Toon Boom). La profundidad Z de cada capa es la misma del diorama/multiplano."><svg class="ico"><use href="#i-files"/></svg></button>
     <div class="tl-frames" id="tlFrames" title="Arrastrá sobre los cuadros para hojearlos (scrub)"></div>
     <button class="ibtn" id="tlKey" title="Marcar/desmarcar este cuadro como FOTOGRAMA CLAVE (pose principal del flujo pose-a-pose)"><svg class="ico"><use href="#i-key"/></svg></button>
     <button class="ibtn" id="tlAdd" title="Duplicar este cuadro al FINAL (flujo clásico: dibujar sobre la copia)"><svg class="ico"><use href="#i-plus"/></svg></button>
@@ -591,6 +592,14 @@
     <button class="ibtn" id="tlCamKey" title="Dejar clave de cámara en este cuadro (con la posición actual del encuadre) · si ya hay, la borra" hidden><svg class="ico"><use href="#i-camkey"/></svg></button>
     <button class="ibtn" id="tlExport" title="Exportar la animación: GIF, secuencia PNG o spritesheet — si hay claves de cámara, sale POR LA CÁMARA (con multiplano Z)"><svg class="ico"><use href="#i-clap"/></svg></button>
     <span class="dz-hint" id="tlInfo"></span>
+  </div>
+  <!-- timeline por CAPAS × cuadros (estilo Toon Boom): filas capa, columnas cuadro -->
+  <div class="dz-tlgrid" id="dzTlGrid" hidden>
+    <div class="dz-tlg-head">
+      <span class="dz-tlg-corner">capas ↓ · cuadros →</span>
+      <div class="dz-tlg-cols" id="dzTlgCols"></div>
+    </div>
+    <div class="dz-tlg-rows" id="dzTlgRows"></div>
   </div>
   <!-- chat/prompt del diseño: pedirle correcciones al agente sin salir del editor -->
   <div class="dz-dock">
