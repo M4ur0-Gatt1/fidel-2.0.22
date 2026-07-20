@@ -1096,6 +1096,154 @@ class Api:
             return "" if (r_ >= thresh and g_ >= thresh and b_ >= thresh) else tag
         return re.sub(r"<path\b[^>]*/?>", repl, svg)
 
+    # ── trazador de contornos en NUMPY (sin vtracer, corre en cualquier Python) ──
+    @staticmethod
+    def _rdp(pts, eps):
+        """Ramer-Douglas-Peucker: simplifica una polilínea quitando puntos
+        redundantes (saca la escalera de píxeles del contorno)."""
+        import math
+        n = len(pts)
+        if n < 3:
+            return pts
+        keep = [False] * n
+        keep[0] = keep[-1] = True
+        stack = [(0, n - 1)]
+        while stack:
+            a, b = stack.pop()
+            x1, y1 = pts[a]; x2, y2 = pts[b]
+            dx, dy = x2 - x1, y2 - y1
+            L = math.hypot(dx, dy) or 1.0
+            dmax, idx = 0.0, -1
+            for i in range(a + 1, b):
+                x0, y0 = pts[i]
+                d = abs(dy * x0 - dx * y0 + x2 * y1 - y2 * x1) / L
+                if d > dmax:
+                    dmax, idx = d, i
+            if dmax > eps and idx > 0:
+                keep[idx] = True
+                stack.append((a, idx)); stack.append((idx, b))
+        return [pts[i] for i in range(n) if keep[i]]
+
+    @staticmethod
+    def _rdp_closed(pts, eps):
+        """RDP para un lazo CERRADO: parte el lazo en dos arcos con extremos
+        distintos (si no, el RDP normal degenera a 2 puntos porque inicio==fin)."""
+        if len(pts) > 1 and pts[0] == pts[-1]:
+            pts = pts[:-1]
+        n = len(pts)
+        if n < 4:
+            return pts
+        lo = min(range(n), key=lambda i: pts[i][0] + pts[i][1])
+        hi = max(range(n), key=lambda i: pts[i][0] + pts[i][1])
+        a, b = sorted((lo, hi))
+        if a == b:
+            a, b = 0, n // 2
+        r1 = Api._rdp(pts[a:b + 1], eps)
+        r2 = Api._rdp(pts[b:] + pts[:a + 1], eps)
+        out = r1[:-1] + r2[:-1]         # sacar las anclas duplicadas
+        return out if len(out) >= 3 else pts
+
+    @staticmethod
+    def _smooth_closed(pts):
+        """Catmull-Rom → beziers cúbicas cerradas: curva suave que pasa por
+        todos los puntos del contorno."""
+        n = len(pts)
+        if n < 3:
+            return ""
+        def pt(i):
+            return pts[i % n]
+        d = "M %.1f %.1f " % (pt(0)[0], pt(0)[1])
+        for i in range(n):
+            p0, p1, p2, p3 = pt(i - 1), pt(i), pt(i + 1), pt(i + 2)
+            c1x = p1[0] + (p2[0] - p0[0]) / 6.0; c1y = p1[1] + (p2[1] - p0[1]) / 6.0
+            c2x = p2[0] - (p3[0] - p1[0]) / 6.0; c2y = p2[1] - (p3[1] - p1[1]) / 6.0
+            d += "C %.1f %.1f %.1f %.1f %.1f %.1f " % (c1x, c1y, c2x, c2y, p2[0], p2[1])
+        return d + "Z"
+
+    @staticmethod
+    def _trace_np_contours(mask):
+        """Contornos de una máscara binaria (True=tinta) siguiendo los bordes de
+        píxel y encadenándolos en lazos cerrados. numpy puro."""
+        import numpy as np
+        from collections import defaultdict
+        H, W = mask.shape
+        mp = np.zeros((H + 2, W + 2), bool)
+        mp[1:-1, 1:-1] = mask
+        core = mp[1:-1, 1:-1]
+        up = core & ~mp[0:-2, 1:-1]
+        down = core & ~mp[2:, 1:-1]
+        left = core & ~mp[1:-1, 0:-2]
+        right = core & ~mp[1:-1, 2:]
+        adj = defaultdict(list)
+        def add(p1, p2):
+            adj[p1].append(p2); adj[p2].append(p1)
+        for r, c in zip(*np.where(up)):    add((int(c), int(r)), (int(c) + 1, int(r)))
+        for r, c in zip(*np.where(down)):  add((int(c), int(r) + 1), (int(c) + 1, int(r) + 1))
+        for r, c in zip(*np.where(left)):  add((int(c), int(r)), (int(c), int(r) + 1))
+        for r, c in zip(*np.where(right)): add((int(c) + 1, int(r)), (int(c) + 1, int(r) + 1))
+        used = set()
+        def ek(a, b):
+            return (a, b) if a <= b else (b, a)
+        loops = []
+        for start in list(adj.keys()):
+            for first in adj[start]:
+                if ek(start, first) in used:
+                    continue
+                used.add(ek(start, first))
+                loop = [start, first]
+                prev, cur = start, first
+                while cur != start:
+                    nb = None
+                    for cand in adj[cur]:      # preferí un borde sin usar ≠ al que vine
+                        if cand != prev and ek(cur, cand) not in used:
+                            nb = cand; break
+                    if nb is None:
+                        for cand in adj[cur]:
+                            if ek(cur, cand) not in used:
+                                nb = cand; break
+                    if nb is None:
+                        break
+                    used.add(ek(cur, nb))
+                    loop.append(nb)
+                    prev, cur = cur, nb
+                if len(loop) >= 4:
+                    loops.append(loop)
+        return loops
+
+    def _vectorize_np(s, png_bytes, mode, remove_bg, bg_tol):
+        """Vectoriza line-art/contorno en numpy puro: traza SOLO la tinta a un
+        path con fill-rule evenodd (los huecos salen solos). Sin fondo blanco,
+        sin vtracer — corre en cualquier versión de Python."""
+        try:
+            import io
+            import numpy as np
+            from PIL import Image
+            prep, _key = s._prep_raster(png_bytes, mode, remove_bg, bg_tol)
+            arr = np.asarray(Image.open(io.BytesIO(prep)).convert("L"))
+            mask = arr < 128
+            if not mask.any():
+                return None
+            H, W = mask.shape
+            loops = s._trace_np_contours(mask)
+            eps = 2.2 if mode == "contorno" else 1.4
+            minbb = 6.0 if mode == "contorno" else 2.5
+            subpaths = []
+            for loop in loops:
+                xs = [p[0] for p in loop]; ys = [p[1] for p in loop]
+                if max(max(xs) - min(xs), max(ys) - min(ys)) < minbb:
+                    continue                         # fuera los puntitos
+                simp = s._rdp_closed(loop, eps)
+                if len(simp) >= 3:
+                    subpaths.append(s._smooth_closed(simp))
+            if not subpaths:
+                return None
+            return ('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" '
+                    'viewBox="0 0 %d %d"><path fill="#111111" fill-rule="evenodd" d="%s"/></svg>'
+                    % (W, H, W, H, " ".join(subpaths)))
+        except Exception as e:
+            log(f"tracer numpy: {e}")
+            return None
+
     @staticmethod
     def _vtrace_safe(tin, tout, kwargs):
         """Corre vtracer sin arriesgar el proceso de LOW. Devuelve error o None.
@@ -1133,6 +1281,15 @@ class Api:
         mode: 'color' (formas por color) | 'lineas' (calca el trazo) |
         'contorno' (trazos largos unificados sin puntitos, para animación)."""
         binary = mode in ("lineas", "contorno")
+        # line-art/contorno: trazador NUMPY primero — corre en cualquier Python
+        # (incluido 3.14, donde vtracer crashea) y traza SOLO la tinta a un path
+        # con fill-rule evenodd → NUNCA genera capas de fondo blanco.
+        if binary:
+            svg_np = s._vectorize_np(png_bytes, mode, remove_bg, bg_tol)
+            if svg_np:
+                if mode == "contorno":
+                    svg_np = s._drop_tiny_paths(svg_np, 6.0)
+                return svg_np, None
         opt = s._VTRACE_CONTOUR if mode == "contorno" \
             else s._VTRACE_PRESETS.get(detail, s._VTRACE_PRESETS["medium"])
         key = None
