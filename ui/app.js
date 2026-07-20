@@ -4733,6 +4733,38 @@ const DZ_TWEEN_NUM = ["x", "y", "cx", "cy", "r", "rx", "ry", "width", "height",
                       "x1", "y1", "x2", "y2", "font-size", "stroke-width", "opacity"];
 const DZ_TWEEN_COL = ["fill", "stroke"];
 const DZ_TWEEN_STR = ["d", "points", "transform"];
+/* ── INBETWEEN VECTORIAL (morphing de contornos, estilo Toon Boom) ──────────
+   Re-muestrea un path `d` en N puntos equiespaciados por longitud (funciona en
+   paths desconectados del DOM) para poder MORPHEAR dos dibujos DISTINTOS: sin
+   esto, la interpolación solo servía entre trazados de estructura idéntica. */
+function dzSamplePathD(d, N) {
+  const p = document.createElementNS(SVGNS, "path");
+  p.setAttribute("d", d);
+  let L; try { L = p.getTotalLength(); } catch (e) { return null; }
+  if (!L) return null;
+  const out = [];
+  for (let i = 0; i < N; i++) {
+    const pt = p.getPointAtLength(L * i / (N - 1));
+    out.push([pt.x, pt.y]);
+  }
+  return out;
+}
+/* morphea el atributo d de A→B en el instante t re-muestreando ambos a N puntos.
+   Corrige el sentido del recorrido (si está invertido, la interpolación cruzaría
+   fea) quedándose con la orientación de menor distancia total. */
+function dzMorphD(da, db, t, N) {
+  N = N || 64;
+  const pa = dzSamplePathD(da, N), pb = dzSamplePathD(db, N);
+  if (!pa || !pb) return null;
+  const dist = (A, B) => { let s = 0; for (let i = 0; i < N; i++) s += Math.hypot(A[i][0] - B[i][0], A[i][1] - B[i][1]); return s; };
+  const pbRev = [...pb].reverse();
+  const B = dist(pa, pb) <= dist(pa, pbRev) ? pb : pbRev;
+  const pts = [];
+  for (let i = 0; i < N; i++)
+    pts.push([Math.round(dzLerp(pa[i][0], B[i][0], t) * 100) / 100,
+              Math.round(dzLerp(pa[i][1], B[i][1], t) * 100) / 100]);
+  return dzSmoothPath(pts);
+}
 function dzTweenEl(a, b, t) {
   const out = a.cloneNode(true);
   DZ_TWEEN_NUM.forEach(k => {
@@ -4747,7 +4779,9 @@ function dzTweenEl(a, b, t) {
   DZ_TWEEN_STR.forEach(k => {
     const va = a.getAttribute(k), vb = b.getAttribute(k);
     if (va && vb && va !== vb) {
-      const v = dzLerpNums(va, vb, t);
+      let v = dzLerpNums(va, vb, t);
+      // estructura distinta + es un path → MORPH real por re-muestreo (inbetween)
+      if (!v && k === "d") v = dzMorphD(va, vb, t);
       if (v) out.setAttribute(k, v);
     }
   });
@@ -4768,9 +4802,20 @@ function dzTweenBuild(svgA, svgB, t) {
   [...svgA.children].forEach(n => {
     if (DZ_SKIP_TAGS.includes(n.tagName.toLowerCase())) mid.appendChild(n.cloneNode(true));
   });
+  // emparejar A→B: primero por id (aunque cambie el orden), luego por posición
+  const usedB = new Set();
+  const partner = (a, i) => {
+    if (a.id) {
+      const byId = cb.find((n, j) => !usedB.has(j) && n.id === a.id && n.tagName === a.tagName);
+      if (byId) { usedB.add(cb.indexOf(byId)); return byId; }
+    }
+    if (cb[i] && !usedB.has(i) && cb[i].tagName === a.tagName) { usedB.add(i); return cb[i]; }
+    return null;
+  };
   let matched = 0;
   for (let i = 0; i < ca.length; i++) {
-    if (cb[i] && cb[i].tagName === ca[i].tagName) { mid.appendChild(dzTweenEl(ca[i], cb[i], t)); matched++; }
+    const b = partner(ca[i], i);
+    if (b) { mid.appendChild(dzTweenEl(ca[i], b, t)); matched++; }
     else mid.appendChild(ca[i].cloneNode(true));    // sin par: queda como en A
   }
   mid.classList.remove("dz-sel");
@@ -4781,9 +4826,11 @@ function dzTweenModal() {
   if (!DZ.anim) return;
   if (!DZ.anim.frames[DZ.anim.idx + 1])
     return sysMsg("🪄 No hay cuadro siguiente — el intercalado va ENTRE dos cuadros (pará en el primero de los dos)");
-  openModal(`<h2>🪄 Intercalar</h2>
-    <div class="sub">Genera cuadros intermedios entre ESTE cuadro y el siguiente,
-    interpolando posición, tamaño, color y trazados de los elementos que coinciden.</div>
+  openModal(`<h2>🪄 Intercalar (inbetween)</h2>
+    <div class="sub">Genera los cuadros intermedios entre ESTE dibujo y el siguiente.
+    Interpola posición, tamaño y color, y MORPHEA los contornos aunque sean dibujos
+    distintos (re-muestreo estilo Toon Boom). Emparejá las capas por nombre (mismo
+    id en los dos cuadros) para que morpheen los trazos correctos.</div>
     <div class="dz-style-row">
       <span class="dz-hint">Cantidad</span>
       <input type="number" id="twN" class="dz-win" value="1" min="1" max="8">
