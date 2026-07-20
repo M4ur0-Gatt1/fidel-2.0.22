@@ -2875,9 +2875,19 @@ async function dzVectorize() {
   // usar la imagen seleccionada, o la primera <image> del lienzo
   let img = (DZ.sel && DZ.sel.tagName && DZ.sel.tagName.toLowerCase() === "image")
     ? DZ.sel : svg.querySelector("image");
-  if (!img) return dzSetStatus("Importá o generá una imagen primero (🖼) y después vectorizá (✒)");
-  const href = img.getAttribute("href") ||
-    img.getAttributeNS("http://www.w3.org/1999/xlink", "href");
+  let href;
+  if (img) {
+    href = img.getAttribute("href") ||
+      img.getAttributeNS("http://www.w3.org/1999/xlink", "href");
+  } else {
+    // no hay imagen en el lienzo → elegir un archivo (p.ej. el PNG que generó
+    // el agente). Antes esto solo funcionaba con imágenes ya importadas.
+    dzSetStatus("Elegí la imagen a vectorizar (el PNG generado, un boceto…)");
+    const r = await api.import_ref_image();
+    if (!r || r.cancel) return dzSetStatus("");
+    if (r.error) return dzSetStatus("❌ " + r.error);
+    href = r.data;
+  }
   if (!href) return dzSetStatus("La imagen no tiene datos para vectorizar");
   openModal(`<h2>Calcar a vectores</h2>
     <div class="sub">Convierte la imagen en trazos SVG editables siguiendo sus
@@ -2930,9 +2940,20 @@ async function dzVectorize() {
     if (!traced) return dzSetStatus("❌ el vectorizador no devolvió SVG");
     const tw = parseFloat(traced.getAttribute("width")) || 512;
     const th = parseFloat(traced.getAttribute("height")) || 512;
-    const ix = parseFloat(img.getAttribute("x")) || 0, iy = parseFloat(img.getAttribute("y")) || 0;
-    const iw = parseFloat(img.getAttribute("width")) || tw;
-    const ih = parseFloat(img.getAttribute("height")) || (iw * th / tw);
+    const vb = (svg.getAttribute("viewBox") || "0 0 1080 1080").split(/\s+/).map(Number);
+    // si hay imagen fuente, calcar sobre su marco; si no (PNG generado), encajar
+    // el calco en el lienzo manteniendo proporción
+    let ix, iy, iw, ih;
+    if (img) {
+      ix = parseFloat(img.getAttribute("x")) || 0; iy = parseFloat(img.getAttribute("y")) || 0;
+      iw = parseFloat(img.getAttribute("width")) || tw;
+      ih = parseFloat(img.getAttribute("height")) || (iw * th / tw);
+    } else {
+      const k = Math.min((vb[2] || 1080) / tw, (vb[3] || 1080) / th);
+      iw = tw * k; ih = th * k;
+      ix = (vb[0] || 0) + ((vb[2] || 1080) - iw) / 2;
+      iy = (vb[1] || 0) + ((vb[3] || 1080) - ih) / 2;
+    }
     dzSnapshot();
     const g = document.createElementNS(SVGNS, "g");
     g.setAttribute("transform", `translate(${ix} ${iy}) scale(${iw / tw} ${ih / th})`);
@@ -2940,9 +2961,13 @@ async function dzVectorize() {
       if (n.nodeType === 1 && n.tagName.toLowerCase() !== "title")
         g.appendChild(document.importNode(n, true));
     });
-    img.parentNode.insertBefore(g, img.nextSibling);
-    if (keep) img.setAttribute("opacity", "0.35");   // queda de referencia para calcar
-    else img.remove();
+    if (img) {
+      img.parentNode.insertBefore(g, img.nextSibling);
+      if (keep) img.setAttribute("opacity", "0.35");   // queda de referencia para calcar
+      else img.remove();
+    } else {
+      svg.appendChild(g);
+    }
     dzSelect(g); dzMarkDirty(); dzBuildLayers();
     const n = g.querySelectorAll("path").length;
     dzSetStatus(`✒ Calco listo: ${n} trazo${n === 1 ? "" : "s"} editable${n === 1 ? "" : "s"}` +
