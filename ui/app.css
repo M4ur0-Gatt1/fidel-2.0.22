@@ -916,21 +916,38 @@ body.light .dz3d-card { background: rgba(0,0,0,.015); outline-color: rgba(0,0,0,
 .dz-split:hover { background: var(--red); opacity: .5; }
 /* X-sheet flotante: planilla de exposición vertical */
 .dz-xsheet {
-  position: absolute; left: 60px; top: 56px; z-index: 8; width: 210px; max-height: 60%;
+  position: absolute; left: 60px; top: 56px; z-index: 8; width: 268px; max-height: 72%;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
   box-shadow: 0 8px 30px rgba(0,0,0,.45); overflow: hidden; display: flex; flex-direction: column;
 }
 .dz-xsheet[hidden] { display: none; }
 .dz-xs-rows { overflow-y: auto; padding: 4px; }
+.dz-xs-head {
+  display: grid; grid-template-columns: 22px 46px 22px 1fr; gap: 6px; align-items: center;
+  padding: 2px 8px 4px; font: 600 8.5px 'JetBrains Mono', monospace; color: var(--faint);
+  letter-spacing: .04em; border-bottom: 1px solid var(--line); margin-bottom: 3px;
+}
 .dz-xs-row {
-  display: flex; align-items: center; gap: 8px; padding: 4px 8px; border-radius: 6px;
-  font-size: 11px; color: var(--mut); cursor: pointer;
+  display: grid; grid-template-columns: 22px 46px 22px 1fr; gap: 6px; align-items: center;
+  padding: 4px 8px; border-radius: 6px; font-size: 11px; color: var(--mut);
 }
 .dz-xs-row:hover { background: var(--panel2); color: var(--txt); }
-.dz-xs-row.cur { background: var(--red); color: #fff; }
-.dz-xs-n { font: 700 10.5px 'JetBrains Mono', monospace; min-width: 20px; text-align: right; }
-.dz-xs-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.dz-xs-b { flex: none; font-size: 10px; }
+.dz-xs-row.cur { background: var(--redsoft); color: var(--txt); box-shadow: inset 2px 0 0 var(--red); }
+.dz-xs-row.key .dz-xs-n { color: var(--orange); }
+.dz-xs-n { font: 700 10.5px 'JetBrains Mono', monospace; text-align: right; cursor: pointer; }
+.dz-xs-thumb {
+  width: 46px; height: 34px; background: #fff; border: 1px solid var(--line);
+  border-radius: 3px; overflow: hidden; cursor: pointer; display: flex;
+}
+.dz-xs-thumb svg { width: 100%; height: 100%; }
+.dz-xs-b { font-size: 10px; text-align: center; }
+.dz-xs-note {
+  width: 100%; min-width: 0; background: var(--bg); border: 1px solid transparent;
+  border-radius: 4px; color: var(--txt); font: 400 10.5px 'Figtree', sans-serif;
+  padding: 3px 5px; outline: none;
+}
+.dz-xs-note:hover { border-color: var(--line); }
+.dz-xs-note:focus { border-color: var(--cyan); background: var(--panel2); }
 /* 🎭 diorama: vista lateral del multiplano — compositing sin nodos */
 .dz-zpanel {
   position: absolute; left: 60px; bottom: 120px; z-index: 8; width: 340px;

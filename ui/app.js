@@ -6040,22 +6040,71 @@ function dzXsToggle() {
     dzXsRender();
   }
 }
+/* X-sheet (planilla de exposición): una fila por cuadro con MINIATURA, número,
+   marcas (🔑 clave · 📹 cámara) y NOTAS editables. Las notas se guardan en la
+   escena (<base>_escena.json) junto a las claves y la cámara. */
 function dzXsRender() {
   const box = $("#dzXsRows");
   if (!box || $("#dzXsheet").hidden || !DZ.anim) return;
   const keys = (DZ.scene && DZ.scene.keys) || [];
   const cams = (DZ.scene && DZ.scene.cam) || {};
-  box.innerHTML = "";
+  const notes = (DZ.scene && DZ.scene.notes) || {};
+  box.innerHTML =
+    '<div class="dz-xs-head"><span>#</span><span>cuadro</span><span></span><span>nota</span></div>';
   DZ.anim.frames.forEach((f, i) => {
     const num = dzFrameNum(f);
     const row = document.createElement("div");
-    row.className = "dz-xs-row" + (i === DZ.anim.idx ? " cur" : "");
-    row.innerHTML = `<span class="dz-xs-n">${i + 1}</span>` +
-      `<span class="dz-xs-name">${f.split(/[\\/]/).pop().replace(".svg", "")}</span>` +
-      `<span class="dz-xs-b">${keys.includes(num) ? "🔑" : ""}${cams[num] ? "📹" : ""}</span>`;
-    row.onclick = () => { dzAnimStopIf(); dzGoFrame(i); };
+    row.className = "dz-xs-row" + (i === DZ.anim.idx ? " cur" : "") +
+      (keys.includes(num) ? " key" : "");
+    // número (clic = ir al cuadro)
+    const n = document.createElement("span");
+    n.className = "dz-xs-n"; n.textContent = i + 1;
+    n.title = "Ir al cuadro " + (i + 1);
+    n.onclick = () => { dzAnimStopIf(); dzGoFrame(i); };
+    // miniatura (clic = ir al cuadro)
+    const thumb = document.createElement("div");
+    thumb.className = "dz-xs-thumb";
+    thumb.onclick = () => { dzAnimStopIf(); dzGoFrame(i); };
+    dzXsThumbInto(thumb, f, i);
+    // marcas
+    const badge = document.createElement("span");
+    badge.className = "dz-xs-b";
+    badge.textContent = (keys.includes(num) ? "🔑" : "") + (cams[num] ? "📹" : "");
+    // nota editable
+    const note = document.createElement("input");
+    note.className = "dz-xs-note"; note.type = "text";
+    note.placeholder = "…"; note.value = notes[num] || "";
+    note.title = "Nota de este cuadro (timing, acción, referencia…)";
+    note.onchange = () => {
+      DZ.scene = DZ.scene || {}; DZ.scene.notes = DZ.scene.notes || {};
+      const v = note.value.trim();
+      if (v) DZ.scene.notes[num] = v; else delete DZ.scene.notes[num];
+      dzSceneSave();
+    };
+    row.append(n, thumb, badge, note);
     box.appendChild(row);
   });
+}
+/* miniatura del cuadro dentro de una celda del X-sheet */
+async function dzXsThumbInto(cell, f, i) {
+  let txt = DZ.anim && DZ.anim.cache[f];
+  if (!txt) {
+    if (i === DZ.anim.idx) {
+      const svg = $("#dzCanvas").querySelector("svg");
+      if (svg) txt = dzSerialize(svg);
+    } else {
+      const r = await api.image_data(f);
+      txt = r && r.svg;
+    }
+    if (DZ.anim && txt) DZ.anim.cache[f] = txt;
+  }
+  if (!txt || !cell.isConnected) return;
+  const tmp = document.createElement("div"); tmp.innerHTML = txt;
+  const svg = tmp.querySelector("svg");
+  if (!svg) return;
+  svg.removeAttribute("width"); svg.removeAttribute("height");
+  svg.setAttribute("preserveAspectRatio", "xMidYMid meet");
+  cell.innerHTML = ""; cell.appendChild(svg);
 }
 
 /* ══ 🪞 modo espejo: lápiz/pincel/pluma dibujan también reflejados sobre el
