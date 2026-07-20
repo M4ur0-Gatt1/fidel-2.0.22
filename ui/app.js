@@ -5132,7 +5132,7 @@ function dzCamToggle() {
   dzSetStatus(DZ.camMode ?
     "📹 Cámara: arrastrá el encuadre (mover), la esquina (zoom), ⟳ (rotar) — cada cambio deja CLAVE en este cuadro. El play y el export salen por acá." : "");
 }
-function dzCamCur() { return dzCamAt(dzFrameNum(DZ.path)); }
+function dzCamCur() { return DZ.camDrag || dzCamAt(dzFrameNum(DZ.path)); }
 function dzCamOverlay() {
   const box = $("#dzCam");
   if (!DZ.camMode || !DZ.path || !$("#dzCanvas").querySelector("svg")) { box.hidden = true; return; }
@@ -5172,42 +5172,61 @@ function dzCamKeyToggle() {
   }
   dzSceneSave(); dzCamOverlay(); dzTimelineBadges();
 }
+/* ── interacción de cámara — v2, predecible ──────────────────────────────
+   Durante el arrastre se muestra un PREVIEW en vivo (DZ.camDrag) SIN tocar la
+   escena; recién al SOLTAR se deja UNA sola clave en el cuadro. Antes cada
+   micro-movimiento clavaba un keyframe (comportamiento impredecible), y un
+   simple clic sin mover dejaba una clave. Ahora un clic no clava nada. */
+function dzCamCommit() {
+  if (DZ.camDrag) { dzCamSetKey(DZ.camDrag); DZ.camDrag = null; }
+}
 function dzCamDrag(e) {
   if (e.target.id === "dzCamSize" || e.target.id === "dzCamRot") return;
   e.preventDefault(); e.stopPropagation();
-  const cam = dzCamCur();
+  const cam0 = dzCamAt(dzFrameNum(DZ.path));
   const start = dzToUser(e.clientX, e.clientY);
   const move = (ev) => {
     const p = dzToUser(ev.clientX, ev.clientY);
-    dzCamSetKey({ ...cam, cx: cam.cx + (p.x - start.x), cy: cam.cy + (p.y - start.y) });
+    let dx = p.x - start.x, dy = p.y - start.y;
+    if (ev.shiftKey) { if (Math.abs(dx) > Math.abs(dy)) dy = 0; else dx = 0; }  // recto
+    DZ.camDrag = { ...cam0, cx: Math.round((cam0.cx + dx) * 10) / 10, cy: Math.round((cam0.cy + dy) * 10) / 10 };
+    dzCamOverlay();
   };
-  const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); };
+  const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); dzCamCommit(); };
   document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
 }
 function dzCamResize(e) {
   e.preventDefault(); e.stopPropagation();
-  const cam = dzCamCur();
+  const cam0 = dzCamAt(dzFrameNum(DZ.path));
   const start = dzToUser(e.clientX, e.clientY);
+  // zoom proporcional a la distancia al centro (alejar la esquina = achicar zoom)
+  const d0 = Math.max(1, Math.hypot(start.x - cam0.cx, start.y - cam0.cy));
   const move = (ev) => {
     const p = dzToUser(ev.clientX, ev.clientY);
-    const w = Math.max(40, cam.w + (p.x - start.x) * 2);
-    dzCamSetKey({ ...cam, w });
+    const d = Math.hypot(p.x - cam0.cx, p.y - cam0.cy);
+    const w = Math.max(40, Math.round(cam0.w * (d / d0) * 10) / 10);
+    DZ.camDrag = { ...cam0, w };
+    dzCamOverlay();
+    const vb = dzVB();
+    dzSetStatus("📹 zoom " + Math.round(vb[2] / w * 100) + "% del encuadre");
   };
-  const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); };
+  const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); dzCamCommit(); dzSetStatus(""); };
   document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
 }
 function dzCamRotate(e) {
   e.preventDefault(); e.stopPropagation();
-  const cam = dzCamCur();
-  const c = dzToScreen(cam.cx, cam.cy);
+  const cam0 = dzCamAt(dzFrameNum(DZ.path));
+  const c = dzToScreen(cam0.cx, cam0.cy);
   const cv = $("#dzCanvas").getBoundingClientRect();
   const a0 = Math.atan2(e.clientY - cv.top - c.y, e.clientX - cv.left - c.x);
   const move = (ev) => {
-    let deg = cam.rot + (Math.atan2(ev.clientY - cv.top - c.y, ev.clientX - cv.left - c.x) - a0) * 180 / Math.PI;
+    let deg = (cam0.rot || 0) + (Math.atan2(ev.clientY - cv.top - c.y, ev.clientX - cv.left - c.x) - a0) * 180 / Math.PI;
     if (ev.shiftKey) deg = Math.round(deg / 15) * 15;
-    dzCamSetKey({ ...cam, rot: Math.round(deg * 10) / 10 });
+    DZ.camDrag = { ...cam0, rot: Math.round(deg * 10) / 10 };
+    dzCamOverlay();
+    dzSetStatus("📹 rotación " + Math.round(DZ.camDrag.rot) + "°");
   };
-  const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); };
+  const up = () => { document.removeEventListener("mousemove", move); document.removeEventListener("mouseup", up); dzCamCommit(); dzSetStatus(""); };
   document.addEventListener("mousemove", move); document.addEventListener("mouseup", up);
 }
 
