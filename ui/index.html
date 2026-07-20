@@ -328,6 +328,10 @@
     <button class="ibtn" id="dzZoomIn" title="Acercar (+)">+</button>
     <button class="ibtn" id="dzZoomFit" title="Ajustar a pantalla (F) · 0 = 100% · espacio o mano (H) panea">⤢</button>
     <div class="vsep"></div>
+    <button class="ibtn" id="dzRulersBtn" title="Reglas (Ctrl+R): arrastrá desde una regla para crear una guía"><svg class="ico"><use href="#i-ruler"/></svg></button>
+    <button class="ibtn" id="dzGridBtn" title="Cuadrícula: grilla de referencia alineada al lienzo"><svg class="ico"><use href="#i-xsheet"/></svg></button>
+    <button class="ibtn" id="dzGuidesBtn" title="Guías: mostrar/ocultar las guías (arrastralas desde las reglas)"><svg class="ico"><use href="#i-templates"/></svg></button>
+    <div class="vsep"></div>
     <button class="ibtn" id="dzZen" title="Modo dibujo (Tab): oculta paneles y menús para dibujar sin distracción"><svg class="ico"><use href="#i-tool"/></svg></button>
     <button class="ibtn" id="dzPrefs" title="Preferencias del estudio: atajos de teclado y suavizado"><svg class="ico"><use href="#i-gear"/></svg></button>
     <button class="ibtn" id="dzCodeBtn" title="Ver/editar el código SVG">&lt;/&gt;</button>
@@ -382,6 +386,18 @@
       <button class="ibtn" id="dzPenDbgBtn" title="🩺 Diagnóstico de tableta: panel en vivo de eventos pointer — útil para depurar tabletas Huion/Wacom. Clic para activar/desactivar." onclick="dzPenDebugToggle()">🩺</button>
     </div>
     <div class="dz-canvas" id="dzCanvas">
+      <!-- cuadrícula (Ctrl+R activa reglas; la grilla y guías se prenden en la barra) -->
+      <div class="dz-grid2d" id="dzGrid2d" hidden></div>
+      <div class="dz-guides" id="dzGuides" hidden></div>
+      <!-- reglas: arriba, abajo, izquierda, derecha (Ctrl+R) -->
+      <div class="dz-rulers" id="dzRulers" hidden>
+        <div class="dz-rl dz-rl-top" id="dzRlTop"></div>
+        <div class="dz-rl dz-rl-bottom" id="dzRlBottom"></div>
+        <div class="dz-rl dz-rl-left" id="dzRlLeft"></div>
+        <div class="dz-rl dz-rl-right" id="dzRlRight"></div>
+        <div class="dz-rl-corner tl"></div><div class="dz-rl-corner tr"></div>
+        <div class="dz-rl-corner bl"></div><div class="dz-rl-corner br"></div>
+      </div>
       <div class="dz-handle" id="dzHandle" title="Arrastrá: agrandar/achicar proporcional · Shift: deformar (estirar)" hidden></div>
       <!-- caja de transformación estilo Photoshop: borde + 8 tiradores -->
       <div class="dz-selbox" id="dzSelBox" hidden>
