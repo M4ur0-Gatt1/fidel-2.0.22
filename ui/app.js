@@ -6835,6 +6835,12 @@ function dz3dPlaneUI(cs, vb, contentNode) {
   }
   cs.appendChild(rul);
   cs.appendChild(mk("g", { "data-dz3d": "guides" }));
+  // superficie de dibujo: rect transparente que cubre TODO el plano y queda
+  // arriba de todo → es siempre el target del puntero, así offsetX/offsetY caen
+  // en coordenadas del plano (aunque esté rotado en 3D). fill=transparent recibe
+  // eventos (a diferencia de fill=none). Es UI: no se guarda al archivo.
+  cs.appendChild(mk("rect", { "data-dz3d": "surf", x: x0, y: y0, width: W, height: H,
+                              fill: "transparent" }));
 }
 
 /* refresca el contenido del plano i desde el svg real (tras dibujar/mover) */
@@ -6851,14 +6857,21 @@ function dz3dSyncCard(i) {
 }
 
 function dz3dWireCard(card, cs, el, i) {
-  cs.addEventListener("pointerdown", e => {
+  const surf = cs.querySelector('[data-dz3d="surf"]') || cs;
+  surf.addEventListener("pointerdown", e => {
     e.stopPropagation();
     const d3 = DZ.d3;
-    if (d3.act !== i) { dz3dActivate(i); return; }     // 1er clic: activar el plano
     const tool = DZ.tool || "select";
+    const drawing = (tool === "pencil" || tool === "brush");
+    // dibujar dibuja YA (activa + traza en el mismo gesto); mover/seleccionar
+    // en un plano nuevo solo activa con el primer clic
+    if (d3.act !== i) {
+      dz3dActivate(i);
+      if (!drawing) return;
+    }
 
-    // ── dibujo 2D sobre el plano activo (lápiz / pincel) ──
-    if (tool === "pencil" || tool === "brush") {
+    // ── dibujo 2D sobre el plano activo (lápiz / pincel), en cualquier ángulo ──
+    if (drawing) {
       const pts = [[e.offsetX, e.offsetY, e.pressure || 0.5]];
       const live = document.createElementNS(SVGNS, "path");
       live.setAttribute("fill", "none");
@@ -6867,13 +6880,13 @@ function dz3dWireCard(card, cs, el, i) {
       live.setAttribute("stroke-linecap", "round");
       live.setAttribute("opacity", "0.8");
       cs.appendChild(live);
-      cs.setPointerCapture(e.pointerId);
+      surf.setPointerCapture(e.pointerId);
       const move = ev => {
         pts.push([ev.offsetX, ev.offsetY, ev.pressure || 0.5]);
         live.setAttribute("d", "M " + pts.map(p => p[0].toFixed(1) + " " + p[1].toFixed(1)).join(" L "));
       };
       const up = () => {
-        cs.removeEventListener("pointermove", move); cs.removeEventListener("pointerup", up);
+        surf.removeEventListener("pointermove", move); surf.removeEventListener("pointerup", up);
         live.remove();
         if (pts.length < 3) return;
         dzSnapshot();
@@ -6906,8 +6919,8 @@ function dz3dWireCard(card, cs, el, i) {
         dz3dSyncCard(i);
         dzBuildLayers();
       };
-      cs.addEventListener("pointermove", move);
-      cs.addEventListener("pointerup", up);
+      surf.addEventListener("pointermove", move);
+      surf.addEventListener("pointerup", up);
       e.preventDefault();
       return;
     }
@@ -6933,7 +6946,7 @@ function dz3dWireCard(card, cs, el, i) {
       });
       const SNAP = 8;
       let dx = 0, dy = 0;
-      cs.setPointerCapture(e.pointerId);
+      surf.setPointerCapture(e.pointerId);
       const move = ev => {
         dx = ev.offsetX - sx; dy = ev.offsetY - sy;
         guides.innerHTML = "";
@@ -6959,7 +6972,7 @@ function dz3dWireCard(card, cs, el, i) {
         dzWritePos(clone, start, dx, dy);
       };
       const up = () => {
-        cs.removeEventListener("pointermove", move); cs.removeEventListener("pointerup", up);
+        surf.removeEventListener("pointermove", move); surf.removeEventListener("pointerup", up);
         guides.innerHTML = "";
         if (Math.abs(dx) < 1 && Math.abs(dy) < 1) return;
         dzSnapshot();
@@ -6967,8 +6980,8 @@ function dz3dWireCard(card, cs, el, i) {
         DZ.dirty = true; dzPersist();
         dz3dSyncCard(i);
       };
-      cs.addEventListener("pointermove", move);
-      cs.addEventListener("pointerup", up);
+      surf.addEventListener("pointermove", move);
+      surf.addEventListener("pointerup", up);
       e.preventDefault();
     }
   });
