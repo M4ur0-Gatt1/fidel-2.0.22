@@ -383,6 +383,17 @@
     </div>
     <div class="dz-canvas" id="dzCanvas">
       <div class="dz-handle" id="dzHandle" title="Arrastrá: agrandar/achicar proporcional · Shift: deformar (estirar)" hidden></div>
+      <!-- caja de transformación estilo Photoshop: borde + 8 tiradores -->
+      <div class="dz-selbox" id="dzSelBox" hidden>
+        <span class="dz-sh nw" data-hx="-1" data-hy="-1"></span>
+        <span class="dz-sh n"  data-hx="0"  data-hy="-1"></span>
+        <span class="dz-sh ne" data-hx="1"  data-hy="-1"></span>
+        <span class="dz-sh w"  data-hx="-1" data-hy="0"></span>
+        <span class="dz-sh e"  data-hx="1"  data-hy="0"></span>
+        <span class="dz-sh sw" data-hx="-1" data-hy="1"></span>
+        <span class="dz-sh s"  data-hx="0"  data-hy="1"></span>
+        <span class="dz-sh se" data-hx="1"  data-hy="1"></span>
+      </div>
       <div class="dz-rotate" id="dzRotate" title="Arrastrá para rotar · Shift: de a 15°" hidden>⟳</div>
       <!-- cámara (📹): el encuadre animable — arrastrá para mover, esquina = zoom, ⟳ = rotar -->
       <div class="dz-cam" id="dzCam" hidden>

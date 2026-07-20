@@ -500,6 +500,9 @@ function bind() {
   $("#dzSave").onclick = dzSave;
   $("#dzCanvas").addEventListener("mousedown", dzPointerDown);
   $("#dzHandle").addEventListener("mousedown", dzHandleDown);
+  document.querySelectorAll("#dzSelBox .dz-sh").forEach(sh =>
+    sh.addEventListener("mousedown", e =>
+      dzBoxHandleDown(e, +sh.dataset.hx, +sh.dataset.hy)));
   $("#dzExt").onclick = () => { if (DZ.path) api.preview_html(DZ.path, $("#dzCanvas").innerHTML); };
   $("#dzZoomIn").onclick = () => dzZoom(0.15);
   $("#dzZoomOut").onclick = () => dzZoom(-0.15);
@@ -2266,6 +2269,7 @@ function dzDeselect() {
   dzClearMulti();
   $("#dzProps").hidden = true; $("#dzEmpty").hidden = false;
   $("#dzHandle").hidden = true; $("#dzPin").hidden = true;
+  const box = $("#dzSelBox"); if (box) box.hidden = true;
   const rot = $("#dzRotate"); if (rot) rot.hidden = true;
   const pv = $("#dzPivot"); if (pv) pv.hidden = true;
   dzBuildLayers();
@@ -2274,14 +2278,19 @@ function dzDeselect() {
 /* ubica el tirador de resize (esquina inferior-derecha) y el pin de comentario
    (esquina superior-izquierda) sobre el elemento seleccionado */
 function dzPositionHandle() {
-  const h = $("#dzHandle"), pin = $("#dzPin"), rot = $("#dzRotate");
-  if (!DZ.sel) { h.hidden = true; pin.hidden = true; if (rot) rot.hidden = true; return; }
+  const h = $("#dzHandle"), pin = $("#dzPin"), rot = $("#dzRotate"), box = $("#dzSelBox");
+  h.hidden = true;                             // la caja PS reemplaza al tirador único
+  if (!DZ.sel) { pin.hidden = true; if (rot) rot.hidden = true; if (box) box.hidden = true; return; }
   try {
     const cvRect = $("#dzCanvas").getBoundingClientRect();
     const b = DZ.sel.getBoundingClientRect();
-    h.style.left = (b.right - cvRect.left) + "px";
-    h.style.top = (b.bottom - cvRect.top) + "px";
-    h.hidden = false;
+    if (box) {
+      box.style.left = (b.left - cvRect.left) + "px";
+      box.style.top = (b.top - cvRect.top) + "px";
+      box.style.width = Math.max(1, b.width) + "px";
+      box.style.height = Math.max(1, b.height) + "px";
+      box.hidden = false;
+    }
     pin.style.left = (b.left - cvRect.left + 4) + "px";
     pin.style.top = (b.top - cvRect.top) + "px";
     pin.hidden = false;
@@ -2290,7 +2299,44 @@ function dzPositionHandle() {
       rot.style.top = (b.top - cvRect.top - 22) + "px";
       rot.hidden = false;
     }
-  } catch (e) { h.hidden = true; pin.hidden = true; if (rot) rot.hidden = true; }
+  } catch (e) { pin.hidden = true; if (rot) rot.hidden = true; if (box) box.hidden = true; }
+}
+/* resize desde cualquiera de los 8 tiradores, anclado al tirador OPUESTO
+   (transformación libre de Photoshop). hx,hy ∈ {-1,0,1}. */
+function dzBoxHandleDown(e, hx, hy) {
+  if (!DZ.sel) return;
+  e.preventDefault(); e.stopPropagation();
+  dzSnapshot();
+  const el = DZ.sel;
+  const start = dzToUser(e.clientX, e.clientY);
+  const bb = el.getBoundingClientRect();
+  const p1 = dzToUser(bb.left, bb.top), p2 = dzToUser(bb.right, bb.bottom);
+  const w0 = Math.max(1, p2.x - p1.x), h0 = Math.max(1, p2.y - p1.y);
+  let lb = null; try { lb = el.getBBox(); } catch (err) { /* sin bbox */ }
+  if (!lb) return;
+  const tr0 = el.getAttribute("transform") || "";
+  // ancla LOCAL = tirador opuesto (si agarro la derecha, fijo la izquierda)
+  const axL = hx > 0 ? lb.x : hx < 0 ? lb.x + lb.width : lb.x + lb.width / 2;
+  const ayL = hy > 0 ? lb.y : hy < 0 ? lb.y + lb.height : lb.y + lb.height / 2;
+  const corner = hx !== 0 && hy !== 0;
+  const move = (ev) => {
+    const p = dzToUser(ev.clientX, ev.clientY);
+    const dx = (p.x - start.x) * hx, dy = (p.y - start.y) * hy;
+    let kx = hx ? Math.max(0.05, (w0 + dx) / w0) : 1;
+    let ky = hy ? Math.max(0.05, (h0 + dy) / h0) : 1;
+    // esquina: proporcional por defecto; Shift = deformar libre
+    if (corner && !ev.shiftKey) { const k = Math.max(kx, ky); kx = ky = k; }
+    const tsc = `translate(${(axL * (1 - kx)).toFixed(2)} ${(ayL * (1 - ky)).toFixed(2)}) scale(${kx.toFixed(4)} ${ky.toFixed(4)})`;
+    el.setAttribute("transform", (tr0 ? tr0 + " " : "") + tsc);
+    dzPositionHandle();
+  };
+  const up = () => {
+    document.removeEventListener("mousemove", move);
+    document.removeEventListener("mouseup", up);
+    dzBuildInspector(el); dzMarkDirty();
+  };
+  document.addEventListener("mousemove", move);
+  document.addEventListener("mouseup", up);
 }
 
 /* ══ rigging (pivotes 📌): fija el eje de rotación de un elemento/parte del
@@ -3010,7 +3056,9 @@ let DRAW = null;   // trazo a mano alzada en curso
 let PEN = null;    // pluma vectorial en curso
 let RULER = null;  // regla/hilo: {a:{x,y}, el:SVGLineElement|null, vp:[{x,y}]} puntos de fuga
 
-const DZ_CURSORS = { select: "", direct: "default", nodes: "default", eraser: "cell",
+// select/direct → "" para que gane el CSS (flecha negra / flecha blanca);
+// nodes usa la flecha blanca también (edita puntos de vector)
+const DZ_CURSORS = { select: "", direct: "", nodes: "", eraser: "cell",
                      dropper: "copy", bucket: "pointer", hand: "grab",
                      pivot: "crosshair", ruler: "crosshair",
                      inflator: "cell", handler: "ew-resize", iron: "default",
