@@ -1082,6 +1082,21 @@ class Api:
         return re.sub(r"<path\b[^>]*/?>", repl, svg)
 
     @staticmethod
+    def _strip_bg_fills(svg, thresh=210):
+        """Borra los paths de relleno CLARO (el papel blanco). En line-art vtracer
+        traza el fondo como un path blanco bajo cada trazo — eso metía una 'capa
+        de fondo blanco por cada trazo'. Deja solo la tinta."""
+        def repl(m):
+            tag = m.group(0)
+            fm = re.search(r'fill="#?([0-9a-fA-F]{6})"', tag)
+            if not fm:
+                return tag
+            h = fm.group(1)
+            r_, g_, b_ = int(h[:2], 16), int(h[2:4], 16), int(h[4:6], 16)
+            return "" if (r_ >= thresh and g_ >= thresh and b_ >= thresh) else tag
+        return re.sub(r"<path\b[^>]*/?>", repl, svg)
+
+    @staticmethod
     def _vtrace_safe(tin, tout, kwargs):
         """Corre vtracer sin arriesgar el proceso de LOW. Devuelve error o None.
 
@@ -1146,6 +1161,8 @@ class Api:
             elif "<svg" in svg:
                 if key:
                     svg = s._strip_key_paths(svg, key)
+                if binary:
+                    svg = s._strip_bg_fills(svg)         # fuera el papel blanco
                 if mode == "contorno":
                     svg = s._drop_tiny_paths(svg, 6.0)   # fuera los puntitos
                 return svg, None
