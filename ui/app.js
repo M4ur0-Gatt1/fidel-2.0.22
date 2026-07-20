@@ -2447,7 +2447,7 @@ function dzPointerDown(e) {
   if (e.target.closest && e.target.closest("#dzCam")) return;             // la cámara maneja lo suyo
   if (!["select", "direct"].includes(DZ.tool || "select")) return;   // otras: pointer events
   let el = e.target;
-  if (!el || el === $("#dzCanvas") || el.tagName.toLowerCase() === "svg") { dzDeselect(); return; }
+  if (!el || el === $("#dzCanvas") || el.tagName.toLowerCase() === "svg") { dzMarqueeStart(e); return; }
   if (el.closest && el.closest("g.dz-onion")) { dzDeselect(); return; }
   if (el.closest && el.closest("[data-locked]")) { dzDeselect(); return; }   // capa bloqueada 🔒
   // clic dentro de un grupo real (<g> guardado): seleccionar el GRUPO (como
@@ -2538,6 +2538,60 @@ function dzPointerDown(e) {
 function dzClearMulti() {
   (DZ.multi || []).forEach(n => n.classList && n.classList.remove("dz-msel"));
   DZ.multi = [];
+}
+
+/* ── selección por marquee (arrastrar un rectángulo en el fondo del lienzo) ──
+   Selecciona en grupo todo lo que el rectángulo TOCA (como Illustrator).
+   Shift = sumar a la selección; Alt = solo lo que quede COMPLETAMENTE adentro. */
+function dzMarqueeStart(e) {
+  e.preventDefault();
+  const cv = $("#dzCanvas");
+  const cvRect = cv.getBoundingClientRect();
+  const x0 = e.clientX, y0 = e.clientY;
+  const box = document.createElement("div");
+  box.className = "dz-marquee";
+  cv.appendChild(box);
+  let moved = false;
+  const draw = (ev) => {
+    const l = Math.min(x0, ev.clientX), t = Math.min(y0, ev.clientY);
+    const w = Math.abs(ev.clientX - x0), h = Math.abs(ev.clientY - y0);
+    box.style.left = (l - cvRect.left) + "px"; box.style.top = (t - cvRect.top) + "px";
+    box.style.width = w + "px"; box.style.height = h + "px";
+    if (w + h > 3) moved = true;
+  };
+  const up = (ev) => {
+    document.removeEventListener("mousemove", draw);
+    document.removeEventListener("mouseup", up);
+    box.remove();
+    if (!moved) { if (!ev.shiftKey) dzDeselect(); return; }   // clic simple → deseleccionar
+    dzMarqueeSelect(Math.min(x0, ev.clientX), Math.min(y0, ev.clientY),
+                    Math.max(x0, ev.clientX), Math.max(y0, ev.clientY),
+                    ev.shiftKey, ev.altKey);
+  };
+  document.addEventListener("mousemove", draw);
+  document.addEventListener("mouseup", up);
+}
+function dzMarqueeSelect(l, t, r, b, additive, contained) {
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (!svg) return;
+  const kids = [...svg.children].filter(n =>
+    !DZ_SKIP_TAGS.includes(n.tagName.toLowerCase()) &&
+    !(n.classList && (n.classList.contains("dz-onion") || n.classList.contains("dz-penui"))) &&
+    !n.hasAttribute("data-locked") && n.getAttribute("display") !== "none");
+  if (!additive) dzClearMulti();
+  DZ.multi = DZ.multi || [];
+  kids.forEach(el => {
+    let bb; try { bb = el.getBoundingClientRect(); } catch (e) { return; }
+    if (!bb.width && !bb.height) return;
+    const hit = contained
+      ? (bb.left >= l && bb.top >= t && bb.right <= r && bb.bottom <= b)
+      : !(bb.right < l || bb.left > r || bb.bottom < t || bb.top > b);   // toca
+    if (hit && !DZ.multi.includes(el)) { DZ.multi.push(el); el.classList.add("dz-msel"); }
+  });
+  if (DZ.multi.length) {
+    dzSelect(DZ.multi[DZ.multi.length - 1]);   // el "activo" es el último; la multi manda al mover
+    dzSetStatus("⧉ " + DZ.multi.length + " elemento(s) seleccionado(s) — Ctrl+G agrupa · arrastrá para moverlos juntos · Shift suma · Alt = solo los de adentro");
+  } else { dzDeselect(); dzSetStatus("Nada en el rango"); }
 }
 
 /* posición base de un elemento según su tipo (para mover con el mouse) */

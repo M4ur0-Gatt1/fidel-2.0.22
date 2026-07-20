@@ -837,6 +837,11 @@ body.light .dz3d-card { background: rgba(0,0,0,.015); outline-color: rgba(0,0,0,
 .dz-node:hover { background: #33B5E8; }
 /* selección múltiple (Shift+clic) */
 .dz-msel { outline: 1.5px dashed #33B5E8; outline-offset: 2px; }
+/* rectángulo de selección por arrastre (marquee) */
+.dz-marquee {
+  position: absolute; z-index: 6; pointer-events: none;
+  border: 1px solid var(--cyan); background: var(--cyansoft);
+}
 /* campos de captura de atajo (⚙ Preferencias) */
 .dz-keycap {
   width: 90px !important; text-align: center; cursor: pointer;
