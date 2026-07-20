@@ -689,6 +689,17 @@ $("#dzDiscBtn").onclick = () => dzDiscToggle();
   $("#dzRulersBtn").onclick = dzRulersToggle;
   $("#dzGridBtn").onclick = dzGridToggle;
   $("#dzGuidesBtn").onclick = dzGuidesToggle;
+  // panel de capas estilo Photoshop (fusión + acciones)
+  $("#dzLayNew").onclick = dzLayerNew;
+  $("#dzLayDup").onclick = () => { if (DZ.sel) dzDuplicate(); };
+  $("#dzLayGroup").onclick = e => dzGroupSel(e.shiftKey);
+  $("#dzLayMerge").onclick = dzLayerMergeDown;
+  $("#dzLayUp").onclick = () => dzLayerMove(1);
+  $("#dzLayDown").onclick = () => dzLayerMove(-1);
+  $("#dzLayDel").onclick = () => { if (DZ.sel) dzDeleteSelected(); };
+  $("#dzBlend").onchange = e => dzLayerBlend(e.target.value);
+  $("#dzLayOpacity").oninput = e => dzLayerOpacity(e.target.value, false);
+  $("#dzLayOpacity").onchange = e => dzLayerOpacity(e.target.value, true);
   $("#dzRlTop").addEventListener("pointerdown", e => dzRulerPull(e, "h"));
   $("#dzRlBottom").addEventListener("pointerdown", e => dzRulerPull(e, "h"));
   $("#dzRlLeft").addEventListener("pointerdown", e => dzRulerPull(e, "v"));
@@ -2270,6 +2281,7 @@ function dzSelect(el) {
   dzBuildLayers();
   if (DZ.rigMode) dzRigPanelSync();
   dzStyleSync(el);
+  dzLayerToolsSync(el);
   dzPivotMark();
   // modo comentario: el dock ahora apunta SOLO a este elemento
   $("#dzPrompt").placeholder = `💬 Comentario sobre <${el.tagName.toLowerCase()}> — LOW edita SOLO ese elemento`;
@@ -7024,6 +7036,75 @@ function dzLayerRow(el, depth) {
     };
   }
   return row;
+}
+
+/* ── acciones del panel de capas (estilo Photoshop) ── */
+function dzLayerNew() {
+  const svg = $("#dzCanvas").querySelector("svg");
+  if (!svg) return;
+  dzSnapshot();
+  const g = document.createElementNS(SVGNS, "g");
+  g.id = dzUniqueId("capa");
+  svg.appendChild(g);                                   // arriba de todo (al frente)
+  dzMarkDirty(); dzBuildLayers(); dzSelect(g);
+  dzSetStatus("Capa nueva «" + g.id + "» al frente — dibujá o pegá adentro");
+}
+function dzUniqueId(base) {
+  const svg = $("#dzCanvas").querySelector("svg");
+  let i = 1, id;
+  do { id = base + i++; } while (svg && svg.querySelector("#" + CSS.escape(id)));
+  return id;
+}
+/* combinar la capa activa con la de ABAJO (menor z-order) en un solo grupo */
+function dzLayerMergeDown() {
+  const el = DZ.sel; if (!el) return;
+  const below = el.previousElementSibling;
+  if (!below || DZ_SKIP_TAGS.includes(below.tagName.toLowerCase()))
+    return dzSetStatus("No hay capa debajo para combinar");
+  dzSnapshot();
+  const g = document.createElementNS(SVGNS, "g");
+  g.id = dzUniqueId("combinada");
+  below.parentNode.insertBefore(g, below);
+  g.appendChild(below); g.appendChild(el);             // debajo primero, activa encima
+  dzMarkDirty(); dzBuildLayers(); dzSelect(g);
+  dzSetStatus("Capas combinadas en «" + g.id + "»");
+}
+/* subir (+1, al frente) o bajar (-1, atrás) la capa activa en el orden de dibujo */
+function dzLayerMove(dir) {
+  const el = DZ.sel; if (!el) return;
+  dzSnapshot();
+  if (dir > 0 && el.nextElementSibling)
+    el.parentNode.insertBefore(el, el.nextElementSibling.nextElementSibling);
+  else if (dir < 0 && el.previousElementSibling)
+    el.parentNode.insertBefore(el, el.previousElementSibling);
+  dzMarkDirty(); dzBuildLayers(); dzPositionHandle();
+}
+/* modo de fusión (mix-blend-mode) de la capa activa — la superposición de PS */
+function dzLayerBlend(mode) {
+  const el = DZ.sel; if (!el) return;
+  dzSnapshot();
+  const st = (el.getAttribute("style") || "").replace(/mix-blend-mode:[^;]+;?/g, "").trim();
+  el.setAttribute("style", (st ? st + ";" : "") + (mode && mode !== "normal" ? "mix-blend-mode:" + mode : ""));
+  if (!el.getAttribute("style")) el.removeAttribute("style");
+  dzMarkDirty();
+}
+function dzLayerOpacity(v, commit) {
+  const el = DZ.sel; if (!el) return;
+  if (commit) dzSnapshot();
+  const o = Math.max(0, Math.min(100, +v || 0));
+  if (o >= 100) el.removeAttribute("opacity"); else el.setAttribute("opacity", (o / 100).toFixed(2));
+  $("#dzLayOpacityLbl").textContent = o + "%";
+  if (commit) { dzMarkDirty(); dzBuildLayers(); }
+}
+/* refleja fusión y opacidad de la capa activa en el panel */
+function dzLayerToolsSync(el) {
+  const bl = $("#dzBlend"), op = $("#dzLayOpacity"), lbl = $("#dzLayOpacityLbl");
+  if (!bl || !el) return;
+  const m = /mix-blend-mode:\s*([a-z-]+)/.exec(el.getAttribute("style") || "");
+  bl.value = m ? m[1] : "normal";
+  const o = el.getAttribute("opacity");
+  const pct = o == null ? 100 : Math.round(parseFloat(o) * 100);
+  op.value = pct; if (lbl) lbl.textContent = pct + "%";
 }
 
 /* F7: mostrar/ocultar el panel de capas y superposiciones (el inspector) */

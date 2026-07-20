@@ -1157,6 +1157,23 @@ body.light .dz3d-card { background: rgba(0,0,0,.015); outline-color: rgba(0,0,0,
 }
 .dz-lay-op::-webkit-inner-spin-button, .dz-lay-z::-webkit-inner-spin-button { display: none; }
 .dz-lay-op:focus, .dz-lay-z:focus { border-color: var(--cyan); }
+/* panel de opciones de capa (estilo Photoshop) donde estaba el logo */
+.dz-laytools {
+  margin-top: 8px; padding: 8px; border: 1px solid var(--line); border-radius: 8px;
+  background: var(--panel2); display: flex; flex-direction: column; gap: 7px;
+}
+.dz-lt-blend, .dz-lt-op { display: flex; align-items: center; gap: 8px; }
+.dz-lt-blend label, .dz-lt-op label {
+  width: 58px; flex: none; font: 500 10.5px 'JetBrains Mono', monospace; color: var(--mut);
+}
+.dz-lt-blend select { flex: 1; min-width: 0; }
+.dz-lt-op input[type="range"] { flex: 1; min-width: 0; accent-color: var(--red); }
+.dz-lt-op span { width: 34px; text-align: right; font: 400 10.5px 'JetBrains Mono', monospace; color: var(--mut); }
+.dz-lt-btns { display: flex; gap: 3px; justify-content: space-between; }
+.dz-lt-btns .ibtn { width: 28px; height: 28px; }
+.dz-lt-btns .ibtn .ico { width: 14px; height: 14px; }
+.dz-lt-btns .ico.dz-up { transform: rotate(180deg); }   /* subir = chevron invertido */
+.dz-lt-btns #dzLayDel:hover { color: var(--red); border-color: var(--red); }
 /* botones de alinear */
 .dz-alignrow { display: flex; gap: 4px; }
 .dz-al {

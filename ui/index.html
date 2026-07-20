@@ -520,17 +520,45 @@
         <div class="dz-palette" id="dzPalette" title="Paleta del proyecto — clic: aplicar relleno · Shift+clic: trazo · clic derecho: quitar"></div>
       </div>
       <div id="dzLayers"></div>
-      <div class="dz-empty" id="dzEmpty">
-        <svg class="dz-empty-logo" viewBox="0 0 340 150" aria-hidden="true">
-          <defs><linearGradient id="emptyBolt" x1="0" y1="0" x2="1" y2="0">
-            <stop offset="50%" stop-color="#F0450E"/><stop offset="50%" stop-color="#33B5E8"/>
-          </linearGradient></defs>
-          <text x="6" y="116" class="sp-l">L</text>
-          <text x="248" y="116" class="sp-l">W</text>
-          <path d="M164 14 L118 122 L151 122 L141 150 L214 62 L176 62 Z" fill="url(#emptyBolt)"/>
-        </svg>
-        <div>Dibujá con las herramientas de la izquierda, o pedile un diseño a LOW abajo.<br>Sin miedo a la página en blanco.</div>
+      <!-- opciones de capa y superposición (estilo Photoshop) -->
+      <div class="dz-laytools" id="dzLayerTools">
+        <div class="dz-lt-blend">
+          <label>Fusión</label>
+          <select id="dzBlend" class="langsel" title="Modo de fusión / superposición de la capa (como Photoshop)">
+            <option value="normal">Normal</option>
+            <option value="multiply">Multiplicar</option>
+            <option value="screen">Trama</option>
+            <option value="overlay">Superponer</option>
+            <option value="darken">Oscurecer</option>
+            <option value="lighten">Aclarar</option>
+            <option value="color-dodge">Sobreexponer</option>
+            <option value="color-burn">Subexponer</option>
+            <option value="hard-light">Luz fuerte</option>
+            <option value="soft-light">Luz suave</option>
+            <option value="difference">Diferencia</option>
+            <option value="exclusion">Exclusión</option>
+            <option value="hue">Tono</option>
+            <option value="saturation">Saturación</option>
+            <option value="color">Color</option>
+            <option value="luminosity">Luminosidad</option>
+          </select>
+        </div>
+        <div class="dz-lt-op">
+          <label>Opacidad</label>
+          <input type="range" id="dzLayOpacity" min="0" max="100" value="100" title="Opacidad de la capa">
+          <span id="dzLayOpacityLbl">100%</span>
+        </div>
+        <div class="dz-lt-btns">
+          <button class="ibtn" id="dzLayNew" title="Nueva capa"><svg class="ico"><use href="#i-plus"/></svg></button>
+          <button class="ibtn" id="dzLayDup" title="Duplicar capa (Ctrl+D)"><svg class="ico"><use href="#i-files"/></svg></button>
+          <button class="ibtn" id="dzLayGroup" title="Agrupar la selección (Ctrl+G) · Shift: desagrupar"><svg class="ico"><use href="#i-group"/></svg></button>
+          <button class="ibtn" id="dzLayMerge" title="Combinar hacia abajo (fusiona con la capa de abajo)"><svg class="ico"><use href="#i-insert"/></svg></button>
+          <button class="ibtn" id="dzLayUp" title="Subir capa (traer al frente)"><svg class="ico dz-up"><use href="#i-chev-d"/></svg></button>
+          <button class="ibtn" id="dzLayDown" title="Bajar capa (enviar atrás)"><svg class="ico"><use href="#i-chev-d"/></svg></button>
+          <button class="ibtn" id="dzLayDel" title="Borrar capa (Supr)"><svg class="ico"><use href="#i-trash"/></svg></button>
+        </div>
       </div>
+      <div class="dz-empty" id="dzEmpty" hidden></div>
       <div id="dzProps" hidden></div>
     </div>
   </div>
