@@ -749,7 +749,10 @@ body:not(.light) .dz3d-coords { color: #F4F4F2; }
 .dz3d-axlbl.y { color: #46A758; }
 .dz3d-axlbl.z { color: #3E9FD9; }
 .dz3d-zbar {
-  position: absolute; left: 50%; bottom: 12px; transform: translateX(-50%); z-index: 6;
+  /* centrado SIN transform: translateX(-50%) caía en medio píxel y el texto
+     se veía borroso — margin:auto centra en píxeles enteros */
+  position: absolute; left: 0; right: 0; bottom: 12px; margin: 0 auto;
+  width: fit-content; z-index: 6;
   display: flex; align-items: center; gap: 8px; max-width: 92%;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
   padding: 7px 12px;
@@ -808,10 +811,9 @@ body:not(.light) .dz3d-coords { color: #F4F4F2; }
 /* plano activo: anillo suave además del marco — SIN sombra caída (pintaba
    una "hoja" gris debajo del plano) */
 .dz3d-card.act { box-shadow: 0 0 0 6px rgba(240,69,14,.10); }
-/* gizmo y barra Z: sombra flotante + microinteracciones */
+/* gizmo y barra Z: sombra flotante (SIN backdrop-blur: emborronaba el texto) */
 .dz3d-gizmo, .dz3d-zbar {
   box-shadow: 0 8px 26px -12px rgba(0,0,0,.45);
-  backdrop-filter: blur(8px);
 }
 .dz3d-gizmo button, .dz3d-add, .dz3d-or {
   transition: color .12s ease, border-color .12s ease, background-color .12s ease, transform .1s ease;
@@ -1625,11 +1627,12 @@ footer #ver {
 .l3d-host canvas { display: block; }
 /* toolbar flotante minimalista (mismo lenguaje que el gizmo del Espacio 3D) */
 .l3d-tools {
-  position: absolute; top: 12px; left: 50%; transform: translateX(-50%); z-index: 2;
+  /* centrado sin transform ni blur: texto nítido en píxel entero */
+  position: absolute; top: 12px; left: 0; right: 0; margin: 0 auto;
+  width: fit-content; z-index: 2;
   display: flex; align-items: center; gap: 6px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
   padding: 6px 8px; box-shadow: 0 8px 26px -12px rgba(0,0,0,.45);
-  backdrop-filter: blur(8px);
 }
 .l3d-title {
   display: inline-flex; align-items: center; gap: 6px; padding: 0 6px;
@@ -1659,3 +1662,43 @@ footer #ver {
 .l3d-hint b {
   font: 600 10px 'JetBrains Mono', monospace; color: #33B5E8; margin-right: 4px;
 }
+
+/* ══ plano FANTASMA del pincel: el marco punteado que muestra EN el espacio
+   3D dónde va a caer el próximo trazo al aire (sigue a la cámara y a la
+   profundidad del pincel) — la confirmación visual que faltaba ══ */
+.dz3d-ghost {
+  position: absolute; left: 50%; top: 50%;
+  border: 1.5px dashed rgba(51,181,232,.6);
+  background: rgba(51,181,232,.045);
+  pointer-events: none;
+}
+.dz3d-ghost[hidden] { display: none; }
+.dz3d-ghost-tag {
+  position: absolute; left: 14px; bottom: 10px;
+  font: 600 30px 'JetBrains Mono', monospace; color: rgba(51,181,232,.85);
+  white-space: nowrap;
+}
+/* ══ slider VERTICAL de profundidad del pincel (borde derecho): arrastrable
+   con el stylus — arriba = cerca de cámara, abajo = fondo ══ */
+.dz3d-depth {
+  position: absolute; right: 14px; top: 50%; margin-top: -110px; z-index: 6;
+  display: none; flex-direction: column; align-items: center; gap: 6px;
+  background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
+  padding: 9px 7px; box-shadow: 0 8px 26px -12px rgba(0,0,0,.45);
+}
+#dz3dStage.tool-draw .dz3d-depth { display: flex; }
+.dz3d-depth-lbl { font: 700 12px 'JetBrains Mono', monospace; color: #33B5E8; }
+.dz3d-depth input[type="range"] {
+  width: 130px; height: 22px; accent-color: #33B5E8;
+  transform: rotate(90deg); margin: 56px 0;   /* vertical: arriba = cerca (min) */
+  touch-action: none;
+}
+.dz3d-depth-val {
+  font: 600 10.5px 'JetBrains Mono', monospace; color: var(--txt);
+  min-width: 34px; text-align: center;
+}
+.dz3d-depth-zero {
+  background: transparent; border: 1px solid var(--line); border-radius: 6px;
+  padding: 2px 8px; color: var(--mut); font: 600 10px 'JetBrains Mono', monospace;
+}
+.dz3d-depth-zero:hover { color: var(--txt); border-color: var(--mut); }

@@ -6772,6 +6772,35 @@ function dz3dSnapOnce() {
   if (DZ.d3 && !DZ.d3._snap) { DZ.d3._snap = true; dzSnapshot(); }
 }
 
+/* fija la profundidad del pincel (slider vertical y Ctrl+rueda comparten esto)
+   y actualiza el plano fantasma + el indicador */
+function dz3dSetAirDepth(v) {
+  const d3 = DZ.d3; if (!d3) return;
+  d3.airDepth = Math.max(-400, Math.min(400, Math.round(v)));
+  const s = $("#dz3dDepth"), lbl = $("#dz3dDepthVal");
+  if (s) s.value = d3.airDepth;
+  if (lbl) lbl.textContent = "z " + d3.airDepth;
+  dz3dGhostUpdate();
+}
+
+/* reubica el plano fantasma: siempre mirando a cámara, a la profundidad del
+   pincel — la confirmación VISUAL de dónde cae el próximo trazo al aire */
+function dz3dGhostUpdate() {
+  const g = $("#dz3dGhost"), d3 = DZ.d3;
+  if (!g || !d3) return;
+  const drawing = DZ.tool === "pencil" || DZ.tool === "brush";
+  g.hidden = !drawing;
+  if (!drawing) return;
+  const rx = Math.round(-d3.rx), ry = Math.round(-d3.ry);
+  const B = new DOMMatrix().rotateAxisAngle(1, 0, 0, rx).rotateAxisAngle(0, 1, 0, ry);
+  const n = B.transformPoint(new DOMPoint(0, 0, 1, 0));
+  const t = -(d3.airDepth || 0) * DZ3D_DEPTH;
+  g.style.transform = `translate3d(${(n.x * t).toFixed(1)}px, ${(n.y * t).toFixed(1)}px, ${(n.z * t).toFixed(1)}px) ` +
+    `rotateX(${rx}deg) rotateY(${ry}deg)`;
+  const tag = $("#dz3dGhostTag");
+  if (tag) tag.textContent = `⤓ pincel · z ${d3.airDepth || 0}`;
+}
+
 function dz3dKids(svg) {
   return [...svg.children].filter(n => !DZ_SKIP_TAGS.includes(n.tagName.toLowerCase())
     && !(n.classList && (n.classList.contains("dz-onion") || n.classList.contains("dz-penui"))));
@@ -6796,6 +6825,7 @@ function dz3dApplyToolClass() {
   if (!stage) return;
   const drawing = DZ.tool === "pencil" || DZ.tool === "brush" || DZ.tool === "pen";
   stage.classList.toggle("tool-draw", drawing);
+  dz3dGhostUpdate();               // el fantasma solo se ve con lápiz/pincel
 }
 
 function dz3dBuild() {
@@ -6871,7 +6901,13 @@ function dz3dBuild() {
       <span><b>1 3 7 5</b> vistas</span><span><b>Shift+A</b> plano</span><span><b>Esc</b> salir</span>
     </div>
     <div class="dz3d-coords" id="dz3dCoo" hidden></div>
-    <div class="dz3d-cross" id="dz3dCross" hidden></div>`;
+    <div class="dz3d-cross" id="dz3dCross" hidden></div>
+    <div class="dz3d-depth" id="dz3dDepthBox" title="Profundidad del pincel: dónde cae el próximo trazo al aire (también Ctrl+rueda)">
+      <span class="dz3d-depth-lbl">⤓</span>
+      <input type="range" id="dz3dDepth" min="-400" max="400" step="5" value="0">
+      <span class="dz3d-depth-val" id="dz3dDepthVal">z 0</span>
+      <button class="dz3d-depth-zero" id="dz3dDepth0" title="Pincel de vuelta a z 0">0</button>
+    </div>`;
   cv.appendChild(stage);
   dz3dApplyToolClass();
 
@@ -6880,6 +6916,15 @@ function dz3dBuild() {
   const kids = dz3dKids(svg);
   DZ.d3.els = kids;
   kids.forEach((el, i) => world.appendChild(dz3dMakeCard(el, i)));
+
+  // ── plano FANTASMA del pincel: marco punteado donde cae el próximo trazo ──
+  const ghost = document.createElement("div");
+  ghost.id = "dz3dGhost";
+  ghost.className = "dz3d-ghost";
+  ghost.hidden = true;
+  ghost.style.cssText = `width:${W}px;height:${H}px;margin-left:${-W / 2}px;margin-top:${-H / 2}px;`;
+  ghost.innerHTML = `<span class="dz3d-ghost-tag" id="dz3dGhostTag"></span>`;
+  world.appendChild(ghost);
 
   // ── controles de vista (con transición animada) ──
   stage.querySelectorAll(".dz3d-gizmo [data-v]").forEach(b =>
@@ -6960,10 +7005,8 @@ function dz3dBuild() {
     //    profundidad son dos controles distintos, como en Feather. ──
     if (e.ctrlKey) {
       e.preventDefault();
-      const d3 = DZ.d3;
-      d3.airDepth = Math.max(-2000, Math.min(2000,
-        (d3.airDepth || 0) + (e.deltaY > 0 ? 10 : -10)));
-      dzSetStatus(`Profundidad del lápiz: z ${d3.airDepth} — el próximo trazo al aire cae ahí (Ctrl+rueda ajusta · apuntar a tinta la pisa)`);
+      dz3dSetAirDepth((DZ.d3.airDepth || 0) + (e.deltaY > 0 ? 10 : -10));
+      dzSetStatus(`Profundidad del pincel: z ${DZ.d3.airDepth} — el marco punteado muestra dónde cae el trazo (apuntar a tinta ⌖ la pisa)`);
       return;
     }
     e.preventDefault();
@@ -6997,6 +7040,13 @@ function dz3dBuild() {
     // Los demás presets (Piso/Pared/Frente) CREAN un nuevo plano con esa orientación
     dz3dAddOrientedPlane(b.dataset.or);
   });
+
+  // ── slider vertical de profundidad del pincel (stylus-friendly) ──
+  $("#dz3dDepth").addEventListener("input", e => {
+    dz3dSetAirDepth(+e.target.value);
+    dzSetStatus(`Profundidad del pincel: z ${DZ.d3.airDepth}`);
+  });
+  $("#dz3dDepth0").onclick = () => { dz3dSetAirDepth(0); dzSetStatus("Pincel de vuelta al plano de acción (z 0)"); };
 
   // ── barra Z (slider) + manejador Z arrastrable — deshacibles con Ctrl+Z ──
   $("#dz3dZr").addEventListener("input", e => { dz3dSnapOnce(); dz3dSetZ(DZ.d3.act, e.target.value, false); });
@@ -7421,6 +7471,7 @@ function dz3dApply() {
   if (!d3 || !w) return;
   w.style.transform = `translate(${d3.panX}px, ${d3.panY}px) scale(${d3.zoom}) ` +
                       `rotateX(${d3.rx}deg) rotateY(${d3.ry}deg)`;
+  dz3dGhostUpdate();               // el fantasma del pincel sigue a la cámara
   const sb = $("#sbZoom");
   if (sb) sb.textContent = Math.round(d3.zoom * 100) + "% · 3D " +
     Math.round(d3.rx) + "°/" + Math.round(d3.ry) + "°";
