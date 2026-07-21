@@ -392,7 +392,7 @@ class Api:
                          encoding="utf-8")
         except OSError as e:
             return f" {e}"
-        s._push("sys", f"👤 Ficha de personaje guardada: {name}")
+        s._push("sys", f"[Personaje] Ficha de personaje guardada: {name}")
         return (f" Ficha de «{name}» guardada — se va a inyectar en TODOS los prompts "
                 "de imagen/video que lo mencionen, para que no cambie entre generaciones")
 
@@ -1453,7 +1453,7 @@ class Api:
         s._push("ws", {"ws": s.ws, "tree": s._tree(), "branch": s._git_branch()})
         return {"path": str(fp), "name": fp.name}
 
-    # direcciones creativas del 🧬: cada variación explora un eje distinto
+    # direcciones creativas del [Variacion]: cada variación explora un eje distinto
     VAR_DIRECTIONS = [
         "paleta de colores alternativa (mantené la composición igual)",
         "más minimalista: menos elementos, más aire, formas más simples",
@@ -1462,7 +1462,7 @@ class Api:
     ]
 
     def design_variations(s, path, current_svg=""):
-        """🧬 Evolución de diseño: genera variaciones del SVG en direcciones
+        """[Variacion] Evolución de diseño: genera variaciones del SVG en direcciones
         creativas distintas (en paralelo) para que el usuario elija una y pueda
         volver a evolucionar desde ella. Devuelve {variants: [{dir, svg}]}."""
         if not s.prov:
@@ -1688,7 +1688,7 @@ class Api:
             try:
                 subprocess.Popen([exe, f.name], cwd=s.ws or None, creationflags=flags)
                 return {"success": True, "returncode": 0, "stderr": "",
-                        "stdout": "🎮 App con ventana: corriendo en un proceso aparte. "
+                        "stdout": "[App] App con ventana: corriendo en un proceso aparte. "
                                   "Cerrala desde su propia ventana."}
             except OSError as e:
                 return {"success": False, "stdout": "", "stderr": "",
@@ -1933,7 +1933,7 @@ class Api:
             if action == "storyboard":
                 from tools.animation.ai_pipeline import StoryboardAI
                 scenes = StoryboardAI().parse_script(params.get("script", "") or "")
-                return (f"📋 Storyboard: {len(scenes)} escena(s).\n"
+                return (f"[Storyboard] Storyboard: {len(scenes)} escena(s).\n"
                         + json.dumps(scenes, ensure_ascii=False)[:1800])
             return (" Acción desconocida. Usá: new, add_actor, keyframe, walk_cycle, "
                     "render, storyboard.")
@@ -2067,7 +2067,7 @@ class Api:
             return {"error": str(e)[:300]}
 
     def social_enqueue(s, network, content, template_id="", schedule_at=""):
-        """Encola un post desde el panel de Redes (📣). schedule_at ISO
+        """Encola un post desde el panel de Redes ([Post]). schedule_at ISO
         vacío = queda listo para publicar ya (draft con fecha now)."""
         try:
             qid = s._social().enqueue(network or "", content or "",
@@ -2283,7 +2283,7 @@ class Api:
             {"type": "function", "function": {"name": "web_fetch", "description": "Descarga una URL y devuelve su texto legible (quita HTML/scripts). Usalo para LEER una página, doc o API pública. Devuelve hasta ~8000 caracteres.", "parameters": {"type": "object", "properties": {"url": {"type": "string"}}, "required": ["url"]}}},
             {"type": "function", "function": {"name": "ask_model", "description": "Delega una SUBTAREA a OTRO modelo para AHORRAR recursos: mandá lo simple/mecánico a uno barato o rápido y reservá el modelo actual (caro) para lo complejo. Devuelve la respuesta de ese modelo como texto para que la uses. 'provider' = uno de los configurados con key (ej. groq, digitalocean, siliconflow, deepseek, glm, qwen, nvidia, custom). 'model' opcional (default: el rápido del proveedor). 'image' (opcional) = ruta a una imagen en el workspace para análisis multimodal (el modelo debe soportar visión). Ideal para: resumir, traducir, reformatear, generar texto trivial, clasificar, listar ideas, boilerplate, y analizar imágenes. NO delegues tareas que necesiten tus otras herramientas (archivos, git, imágenes). Podés hacer varias ask_model en paralelo mental para comparar respuestas.", "parameters": {"type": "object", "properties": {"provider": {"type": "string", "description": "proveedor destino (con key configurada)"}, "prompt": {"type": "string", "description": "la subtarea, autocontenida (incluí todo el contexto que el otro modelo necesita)"}, "model": {"type": "string", "description": "modelo especifico del proveedor (opcional)"}, "image": {"type": "string", "description": "ruta a imagen (png/jpg) en el workspace para análisis multimodal (opcional)"}}, "required": ["provider", "prompt"]}}},
             {"type": "function", "function": {"name": "vectorize", "description": "Convierte una imagen raster del workspace (PNG/JPG) en un SVG VECTORIAL EDITABLE (la 'calca'). Usalo para NO escribir coordenadas SVG a mano (eso sale tosco): parti de una foto, boceto o imagen generada y obtene vectores limpios y editables. 'detail': low|medium|high (mas detalle = mas trazos). Guarda el .svg en el workspace y lo abre en el editor de vectores.", "parameters": {"type": "object", "properties": {"image": {"type": "string", "description": "ruta a la imagen PNG/JPG en el workspace"}, "out": {"type": "string", "description": "ruta .svg destino (opcional)"}, "detail": {"type": "string"}, "mode": {"type": "string", "description": "color (formas por color, default) | lineas (calca SOLO el trazo/tinta — ideal para line-art y bocetos) | contorno (trazos LARGOS y unificados sin puntitos — el mejor para ANIMACION, limpia los fragmentos de vector)"}, "remove_bg": {"type": "boolean", "description": "true: quita el fondo detectado por las esquinas antes de trazar (como la varita de Photoshop)"}, "bg_tol": {"type": "integer", "description": "tolerancia del fondo 4-96 (default 32)"}}, "required": ["image"]}}},
-            {"type": "function", "function": {"name": "illustrate", "description": "LA MEJOR forma de crear una ILUSTRACION sofisticada como VECTOR editable: genera un raster de alta calidad con IA (diffusion) desde tu descripcion y lo VECTORIZA a SVG. Evita el SVG tosco escrito a mano — usalo en vez de dibujar paths cuando quieras algo pulido (personajes, escenas, logos con detalle). 'prompt' detallado (estilo, colores, composicion, fondo). 'detail': low|medium|high. Guarda y abre el .svg editable en el editor ✒.", "parameters": {"type": "object", "properties": {"prompt": {"type": "string"}, "out": {"type": "string", "description": "ruta .svg destino (opcional)"}, "detail": {"type": "string"}, "size": {"type": "string", "description": "ej 1024x1024"}}, "required": ["prompt"]}}},
+            {"type": "function", "function": {"name": "illustrate", "description": "LA MEJOR forma de crear una ILUSTRACION sofisticada como VECTOR editable: genera un raster de alta calidad con IA (diffusion) desde tu descripcion y lo VECTORIZA a SVG. Evita el SVG tosco escrito a mano — usalo en vez de dibujar paths cuando quieras algo pulido (personajes, escenas, logos con detalle). 'prompt' detallado (estilo, colores, composicion, fondo). 'detail': low|medium|high. Guarda y abre el .svg editable en el editor [Diseno].", "parameters": {"type": "object", "properties": {"prompt": {"type": "string"}, "out": {"type": "string", "description": "ruta .svg destino (opcional)"}, "detail": {"type": "string"}, "size": {"type": "string", "description": "ej 1024x1024"}}, "required": ["prompt"]}}},
             {"type": "function", "function": {"name": "anim", "description": "Estudio de ANIMACION 2D profesional (motor propio de LOW: timeline, rigging con huesos/IK, compositor de nodos, export MP4/GIF/Lottie). Ideal para ANIMAR los SVG que diseñás. Acciones (campo 'action') con sus 'params': 'new' {name,width,height,fps,duration} crea un proyecto en el workspace; 'add_actor' {layer,name,svg_path (ruta a un .svg del workspace) o svg (inline),x,y}; 'keyframe' {actor,frame,x,y,rotation,scale_x,scale_y,opacity} pone un cuadro clave; 'walk_cycle' {actor,start,duration} ciclo de caminata automatico; 'render' {output,format(mp4/gif/png),preset(hd/web/4k/gif)} exporta el video; 'storyboard' {script} arma un storyboard desde un guion. Flujo tipico: diseñá el personaje (generate_image/save_character), guardalo como SVG, luego anim new -> add_actor -> keyframe/walk_cycle -> render.", "parameters": {"type": "object", "properties": {"action": {"type": "string", "description": "new | add_actor | keyframe | walk_cycle | render | storyboard"}, "params": {"type": "object", "description": "campos segun la accion (ver descripcion)"}}, "required": ["action"]}}},
         ]
 
@@ -2540,7 +2540,7 @@ class Api:
                 r = subprocess.run(s._ssh_base(target, key, port) + [cmd],
                                    capture_output=True, text=True, timeout=180)
                 out = (r.stdout + "\n" + r.stderr).strip()
-                return f"🔌 {target} (exit={r.returncode})\n{out[:3500] or '(sin salida)'}"
+                return f"[SSH] {target} (exit={r.returncode})\n{out[:3500] or '(sin salida)'}"
             if name == "scp_upload":
                 target, key, port = s._resolve_ssh(args.get("host", ""))
                 if not target:
@@ -2556,7 +2556,7 @@ class Api:
                 parts += [lp, f"{target}:{remote}"]
                 r = subprocess.run(parts, capture_output=True, text=True, timeout=300)
                 out = (r.stdout + "\n" + r.stderr).strip()
-                return f"📤 {local}  {target}:{remote} (exit={r.returncode})\n{out[:2000]}"
+                return f"[Upload] {local}  {target}:{remote} (exit={r.returncode})\n{out[:2000]}"
             if name == "run_code":
                 if not code or code.strip() == "// Nuevo archivo":
                     return " Editor vacio"
@@ -2754,7 +2754,7 @@ class Api:
                 s._written.append(str(p))
                 s._push("wrote", {"path": str(p)})
                 return (f" Vectorizado  {rel} ({svg.count('<path')} trazos editables). "
-                        "Abrilo en el editor ✒ para ajustarlo.")
+                        "Abrilo en el editor [Diseno] para ajustarlo.")
             if name == "illustrate":
                 prompt = args.get("prompt") or ""
                 if not prompt:
@@ -2774,7 +2774,7 @@ class Api:
                 s._written.append(str(p))
                 s._push("wrote", {"path": str(p)})
                 return (f" Ilustración vectorial  {rel} ({svg.count('<path')} trazos, vía {used}). "
-                        "Editable en el ✒ (cada zona de color es un path).")
+                        "Editable en el [Diseno] (cada zona de color es un path).")
             if name == "remember":
                 return s._remember(args.get("note") or args.get("text") or "")
             if name == "social_export":
@@ -2890,8 +2890,8 @@ class Api:
                 temperature=0.4, max_tokens=280 + (220 if sheet else 0))
             out = re.sub(r"<think>.*?</think>", "", r.content or "", flags=re.DOTALL).strip().strip('"')
             if 15 < len(out) < 2200:
-                s._push("sys", f"🈯 Prompt optimizado ({kind})"
-                        + (f" con ficha de {', '.join(c['name'] for c in chars)} 👤" if chars else "")
+                s._push("sys", f"[Prompt] Prompt optimizado ({kind})"
+                        + (f" con ficha de {', '.join(c['name'] for c in chars)} [Personaje]" if chars else "")
                         + f": {out[:130]}…")
                 return out
         except Exception as e:
@@ -4372,7 +4372,7 @@ class Api:
                             res["detalle"] = "salida distinta: " + \
                                 out.get("stdout", "").strip()[:120]
                 res["icon"] = ("" if funciona(res) else
-                               "🟡" if res["corre"] else
+                               "[Amarillo]" if res["corre"] else
                                "" if res["sintaxis"] else "")
                 results.append(res)
                 s._push("sys", f"{res['icon']} {pn} · {res['model']}: "
@@ -4395,7 +4395,7 @@ class Api:
             podio = "\n".join(f"{i + 1}. {x['icon']} {x['prov']} · {x['model']} — "
                               f"{x['lat_ms']}ms · ${x['costo']:.4f}"
                               for i, x in enumerate(orden))
-            s._push("sys", "🏆 Ranking (código que funciona primero, velocidad después):\n" + podio)
+            s._push("sys", "[Ranking] Ranking (código que funciona primero, velocidad después):\n" + podio)
             cmp_dir = data_dir() / 'comparativas'
             cmp_dir.mkdir(parents=True, exist_ok=True)
             fp = cmp_dir / f"cmp_{datetime.datetime.now().strftime('%Y%m%d_%H%M%S')}.json"
@@ -4615,7 +4615,7 @@ class Api:
                 return msgs("\n".join(f"  {f.relative_to(s.ws)}" for f in cf[:25])
                             or "(vacío)")
             if cmd == "search" and arg:
-                return msgs("🔎 " + arg + ":\n" +
+                return msgs("[Buscar] " + arg + ":\n" +
                             s._exec_tool("search_code", {"query": arg}, "", "python"))
             if cmd == "read" and arg:
                 fp = Path(s.ws if s.ws else ".") / arg
@@ -4696,11 +4696,11 @@ class Api:
                                              "", "python"))
                 r = subprocess.run(f"ssh {arg}", shell=True, capture_output=True,
                                    text=True, timeout=60)
-                return msgs("🔌\n" + (r.stdout + r.stderr)[:2000])
+                return msgs("[SSH]\n" + (r.stdout + r.stderr)[:2000])
             if cmd == "upload" and arg:
                 r = subprocess.run(f"scp {arg}", shell=True, capture_output=True,
                                    text=True, timeout=120)
-                return msgs("📤\n" + (r.stdout + r.stderr)[:2000])
+                return msgs("[Upload]\n" + (r.stdout + r.stderr)[:2000])
             if cmd == "browse" and arg:
                 webbrowser.open(arg)
                 return msgs(f" {arg}")
@@ -4709,7 +4709,7 @@ class Api:
                 url, data = parts[0], " ".join(parts[1:])
                 d = dict(p.split("=", 1) for p in data.split() if "=" in p)
                 r = requests.post(url, data=d, timeout=15)
-                return msgs(f"📋 Form ({r.status_code})")
+                return msgs(f"[Storyboard] Form ({r.status_code})")
             if cmd == "scrape" and arg:
                 r = requests.get(arg, headers={"User-Agent": "Mozilla/5.0"}, timeout=15)
                 return msgs(f" {arg[:60]} ({len(r.text)}b)")

@@ -1244,7 +1244,7 @@ class LOWApp:
         try:
             r = subprocess.run(f"ssh {a}", shell=True, capture_output=True,
                                text=True, timeout=60)
-            s.amsg("system", "🔌\n" + (r.stdout + r.stderr)[:2000])
+            s.amsg("system", "[SSH]\n" + (r.stdout + r.stderr)[:2000])
         except Exception as e:
             s.amsg("system", f" {e}")
 
@@ -1252,7 +1252,7 @@ class LOWApp:
         try:
             r = subprocess.run(f"scp {a}", shell=True, capture_output=True,
                                text=True, timeout=120)
-            s.amsg("system", "📤\n" + (r.stdout + r.stderr)[:2000])
+            s.amsg("system", "[Upload]\n" + (r.stdout + r.stderr)[:2000])
         except Exception as e:
             s.amsg("system", f" {e}")
 
@@ -1264,7 +1264,7 @@ class LOWApp:
         try:
             d = dict(p.split("=", 1) for p in data.split() if "=" in p)
             r = requests.post(url, data=d, timeout=15)
-            s.amsg("system", f"📋 Form ({r.status_code})")
+            s.amsg("system", f"[Storyboard] Form ({r.status_code})")
         except Exception as e:
             s.amsg("system", f" {e}")
 

@@ -411,21 +411,21 @@
         <span class="dz-sh se" data-hx="1"  data-hy="1"></span>
       </div>
       <div class="dz-rotate" id="dzRotate" title="Arrastrá para rotar · Shift: de a 15°" hidden></div>
-      <!-- cámara (📹): el encuadre animable — arrastrá para mover, esquina = zoom,  = rotar -->
+      <!-- cámara (<i class="fas fa-camera-movie"></i>): el encuadre animable — arrastrá para mover, esquina = zoom,  = rotar -->
       <div class="dz-cam" id="dzCam" hidden>
-        <span class="dz-cam-tag" id="dzCamTag">📹 cámara</span>
+        <span class="dz-cam-tag" id="dzCamTag"><i class="fas fa-camera-movie"></i> cámara</span>
         <div class="dz-cam-size" id="dzCamSize" title="Arrastrá: zoom de cámara (achica el encuadre = acerca)"></div>
         <div class="dz-cam-rot" id="dzCamRot" title="Arrastrá para rotar la cámara"></div>
       </div>
       <div class="dz-pivotmark" id="dzPivot" title="Pivote de rotación (rig) — la rotación gira alrededor de acá" hidden>✛</div>
-      <!-- 🎭 Diorama: vista lateral del multiplano (cámara  capas  fondo).
+      <!-- <i class="fas fa-masks-theater"></i> Diorama: vista lateral del multiplano (cámara  capas  fondo).
            El compositing sin nodos: cada capa es una tarjeta física que corrés
            en profundidad, como el diorama de la cámara multiplano de Disney -->
       <div class="dz-zpanel" id="dzZPanel" hidden>
-        <div class="dz-op-head" id="dzZpHead">🎭 diorama (profundidad Z)
+        <div class="dz-op-head" id="dzZpHead"><i class="fas fa-masks-theater"></i> diorama (profundidad Z)
           <span class="dz-op-x" id="dzZpClose" title="Cerrar">×</span></div>
         <div class="dz-zstage" id="dzZStage">
-          <div class="dz-zcam" title="Cámara — lo cercano (izquierda) se mueve más en los travellings">📹</div>
+          <div class="dz-zcam" title="Cámara — lo cercano (izquierda) se mueve más en los travellings"><i class="fas fa-camera-movie"></i></div>
           <div class="dz-zrail" id="dzZRail"></div>
         </div>
         <div class="dz-zhint">← cerca (se mueve más) · plano de acción · lejos (fondo) <br>
@@ -439,7 +439,7 @@
       </div>
       <!-- papel cebolla: panel chico, personalizable y ARRASTRABLE -->
       <div class="dz-onionpanel" id="dzOnionPanel" hidden>
-        <div class="dz-op-head" id="dzOpHead">🧅 papel cebolla <span class="dz-op-x" id="dzOpClose" title="Cerrar">×</span></div>
+        <div class="dz-op-head" id="dzOpHead"><i class="fas fa-layer-group"></i> papel cebolla <span class="dz-op-x" id="dzOpClose" title="Cerrar">×</span></div>
         <div class="dz-op-row"><span>Antes</span>
           <input type="number" id="opBefore" min="0" max="4" value="2" title="Cuadros fantasma anteriores">
           <input type="color" id="opColorB" value="#8c0000" title="Color de los anteriores">
@@ -470,19 +470,19 @@
           <button class="ghost" id="rigDel" title="Quitar la clave de este cuadro">✕</button>
         </div>
         <div class="dz-op-row"><div class="dz-suggest" id="rigChips"></div></div>
-        <div class="dz-op-row dz-perf-sep"><span>🎥 Actuación</span>
+        <div class="dz-op-row dz-perf-sep"><span><i class="fas fa-video"></i> Actuación</span>
           <input type="number" id="perfDur" value="3" min="0.5" max="30" step="0.5" title="Duración de la toma (segundos)">
           <span class="dz-hint">seg</span>
         </div>
         <div class="dz-op-row">
-          <button class="ghost" id="perfRec" title="⏺ Grabar una TOMA: cuenta 3-2-1 y actuá el movimiento arrastrando la pieza (Shift = rotarla desde el pivote). Las pasadas anteriores se reproducen mientras grabás — como un titiritero por capas.">⏺ actuar</button>
+          <button class="ghost" id="perfRec" title="<i class="fas fa-stop-circle"></i> Grabar una TOMA: cuenta 3-2-1 y actuá el movimiento arrastrando la pieza (Shift = rotarla desde el pivote). Las pasadas anteriores se reproducen mientras grabás — como un titiritero por capas."><i class="fas fa-stop-circle"></i> actuar</button>
           <button class="ghost" id="perfPlay" title="Ver la actuación completa"></button>
           <button class="ghost" id="perfSmooth" title=" Suavizar la toma (limpia el temblor del pulso sin perder la intención)"></button>
           <button class="ghost" id="perfBake" title=" Generar los cuadros del lapso (para exportar GIF/video)"></button>
         </div>
         <div class="dz-hint" id="rigHint">posá    otro cuadro  posá   · LOW interpola entre claves</div>
       </div>
-      <div class="dz-pin" id="dzPin" hidden>💬</div>
+      <div class="dz-pin" id="dzPin" hidden><i class="fas fa-comment-dots"></i></div>
     </div>
     <div class="dz-code" id="dzCode" hidden>
       <textarea id="dzCodeArea" spellcheck="false"></textarea>

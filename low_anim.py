@@ -151,7 +151,7 @@ def cmd_render(args):
 def cmd_rig(args):
     """Crear un rig de huesos para un personaje."""
     rig = Rig(name=args.name)
-    print(f"🦴 Rig creado: {args.name}")
+    print(f"[Rig] Rig creado: {args.name}")
 
     # Si se pasó un archivo de joints
     if args.joints:
@@ -183,13 +183,13 @@ def cmd_storyboard(args):
     ai = StoryboardAI()
     scenes = ai.parse_script(script)
 
-    print(f"📋 Storyboard: {len(scenes)} escenas detectadas")
+    print(f"[Storyboard] Storyboard: {len(scenes)} escenas detectadas")
     for i, s in enumerate(scenes):
         print(f"   {i+1}. {s.get('scene', 'Sin nombre')}")
         for a in s.get("actions", []):
             print(f"       {a}")
         for d in s.get("dialogs", []):
-            print(f"      💬 {d}")
+            print(f"      [Dialogo] {d}")
 
     # Guardar
     out_path = Path(args.output or "storyboard.json")
@@ -213,7 +213,7 @@ def cmd_pose(args):
         poses = maker.generate_all("poses")
         print(f" {len(poses)} poses generadas")
     else:
-        print(f"📋 Poses disponibles: {', '.join(maker.STANDARD_POSES)}")
+        print(f"[Storyboard] Poses disponibles: {', '.join(maker.STANDARD_POSES)}")
 
     return maker
 

@@ -493,7 +493,7 @@ footer {
 /* ══ Modales ══ */
 .overlay {
   position: fixed; inset: 0; background: rgba(0,0,0,.55);
-  /* por encima del editor de diseño (z 61): el 🧬 y otros modales abren desde ahí */
+  /* por encima del editor de diseño (z 61): el [Variacion] y otros modales abren desde ahí */
   display: flex; align-items: center; justify-content: center; z-index: 70;
 }
 .overlay[hidden] { display: none; }
@@ -793,7 +793,7 @@ body.light .dz3d-rulers .rbg { fill: rgba(245,244,241,.78); }
   width: 18px; height: 18px; line-height: 16px; text-align: center; font-size: 12px;
   background: #f5a623; color: #1a1a1a; border-radius: 50%; cursor: grab;
 }
-/* badges del X-sheet: clave de dibujo (🔑) y de cámara (📹) */
+/* badges del X-sheet: clave de dibujo ([Clave]) y de cámara ([Camara]) */
 .tl-key {
   position: absolute; right: 2px; top: 2px; z-index: 2; font-size: 9px;
   background: rgba(0,0,0,.55); border-radius: 4px; padding: 0 3px; line-height: 13px;
@@ -857,7 +857,7 @@ body.light .dz3d-rulers .rbg { fill: rgba(245,244,241,.78); }
   font: 600 12px 'JetBrains Mono', monospace; letter-spacing: 1px;
 }
 .dz-keycap:focus { outline: 2px solid var(--red); }
-/* panel 🧅 de papel cebolla: chico, flotante y arrastrable */
+/* panel [Onion] de papel cebolla: chico, flotante y arrastrable */
 .dz-onionpanel {
   position: absolute; right: 290px; top: 56px; z-index: 8; width: 172px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
@@ -893,7 +893,7 @@ body.light .dz3d-rulers .rbg { fill: rgba(245,244,241,.78); }
   border: 1px solid var(--line);
 }
 .dz-layer.dz-dropover { outline: 1.5px dashed var(--red); outline-offset: -2px; }
-/* botones armados/grabando (🏃 esperando final, ⏺ grabación) */
+/* botones armados/grabando ([Run] esperando final, [Grabar] grabación) */
 .ibtn.rec { background: var(--red); color: #fff; animation: dz-pulse 1.1s infinite; }
 @keyframes dz-pulse { 50% { opacity: .55; } }
 /* ── chrome de estudio: menubar, statusbar, splitter, tool-opts, x-sheet ── */
@@ -1003,7 +1003,7 @@ body.light .dz3d-rulers .rbg { fill: rgba(245,244,241,.78); }
 .dz-tlg-col { position: relative; }
 .dz-tlg-col.mj { color: var(--txt); border-right-color: var(--line); }
 .dz-tlg-col.cur { background: var(--redsoft); color: var(--red); box-shadow: inset 0 -2px 0 var(--red); }
-/* marcas 🔑 (clave de dibujo) y 📹 (clave de cámara) bajo el número */
+/* marcas [Clave] (clave de dibujo) y [Camara] (clave de cámara) bajo el número */
 .dz-tlg-col i { position: absolute; bottom: 1px; left: 50%; width: 5px; height: 5px; border-radius: 99px; transform: translateX(-50%); }
 .dz-tlg-col i.k { background: var(--orange); }
 .dz-tlg-col i.c { background: var(--cyan); transform: translateX(-50%) translateY(-6px); }
@@ -1039,12 +1039,13 @@ body.light .dz3d-rulers .rbg { fill: rgba(245,244,241,.78); }
 }
 .dz-tlg-cell.cam.key { background: var(--cyan); }
 .dz-tlg-cell.cam.key::after {
-  content: "📹"; position: absolute; inset: 0; font-size: 9px; text-align: center; line-height: 22px;
+  content: "\f8a9"; position: absolute; inset: 0; font-size: 9px; text-align: center; line-height: 22px;
+  font-family: "Font Awesome 5 Free"; font-weight: 900;
 }
 .dz-tlg-cell:hover { outline: 1px solid var(--mut); outline-offset: -1px; }
 /* playhead: columna del cuadro actual resaltada en todas las filas */
 .dz-tlg-cell.cur { box-shadow: inset 1px 0 0 var(--red), inset -1px 0 0 var(--red); background-color: rgba(240,69,14,.08); }
-/* 🎭 diorama: vista lateral del multiplano — compositing sin nodos */
+/* [Diorama] diorama: vista lateral del multiplano — compositing sin nodos */
 .dz-zpanel {
   position: absolute; left: 60px; bottom: 120px; z-index: 8; width: 340px;
   background: var(--panel); border: 1px solid var(--line); border-radius: 10px;
@@ -1199,7 +1200,7 @@ body.light .dz3d-rulers .rbg { fill: rgba(245,244,241,.78); }
 .dz-layers-h .dz-hint { font-weight: 400; text-transform: none; letter-spacing: 0; }
 #dzLayers { margin-bottom: 12px; }
 #dzLayers:empty { margin: 0; }
-/* panel de capas por columnas (Toon Boom):  🔒 ▦ nombre  OP  Z */
+/* panel de capas por columnas (Toon Boom):  [Bloqueado] [Grid] nombre  OP  Z */
 .dz-lay-head, .dz-lay-row {
   display: grid; grid-template-columns: 18px 18px 16px 1fr 38px 40px;
   align-items: center; gap: 4px;
@@ -1255,7 +1256,7 @@ body.light .dz3d-rulers .rbg { fill: rgba(245,244,241,.78); }
 }
 .dz-al:hover { color: var(--txt); border-color: var(--mut); background: var(--panel2); }
 .dz-al.on { color: #F26522; border-color: #F26522; background: rgba(242,101,34,.12); }
-/* 🧬 grilla de variaciones */
+/* [Variacion] grilla de variaciones */
 .var-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin: 6px 0 12px; }
 .var-cell {
   position: relative; background: #fff; border: 2px solid var(--line); border-radius: 10px;
@@ -1418,12 +1419,12 @@ body.light .dz3d-rulers .rbg { fill: rgba(245,244,241,.78); }
 }
 .dz-zen-exit:hover { color: var(--txt); border-color: var(--red); }
 
-/* 🎥 actuación (titiritero digital) */
+/* [Video] actuación (titiritero digital) */
 .dz-perf-sep { border-top: 1px solid var(--line); padding-top: 8px; margin-top: 4px; }
 #perfRec.rec { color: #fff; background: #E5322D; border-color: #E5322D; animation: perf-blink 1s ease-in-out infinite; }
 @keyframes perf-blink { 0%,100% { opacity: 1; } 50% { opacity: .55; } }
 
-/* ── 🎦 Titiritero: HUD de grabación en vivo sobre el lienzo ── */
+/* ── [Film] Titiritero: HUD de grabación en vivo sobre el lienzo ── */
 .dz-pup-hud {
   position: absolute; top: 14px; left: 50%; transform: translateX(-50%);
   z-index: 40; pointer-events: none;
