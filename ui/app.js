@@ -6497,7 +6497,7 @@ async function dzTlGridRender() {
       `<span class="dz-eye eye" title="${hidden ? "Mostrar" : "Ocultar"}">${hidden ? "◌" : ""}</span>` +
       `<span class="dz-eye lock" title="${locked ? "Desbloquear" : "Bloquear"}" style="opacity:${locked ? 1 : .4}">${locked ? "<i class='fas fa-lock'></i>" : "🔓"}</span>` +
       `<span class="dz-tlg-name" title="${key}">${key}</span>` +
-      `<input class="dz-tlg-z" type="number" step="10" value="${z}" title="Profundidad Z (multiplano) — la misma del diorama"${liveEl ? "" : " disabled"}>`;
+      `<input class="dz-tlg-z" type="number" step="10" value="${z}" title="Profundidad Z — la misma de la cámara multiplano"${liveEl ? "" : " disabled"}>`;
     head.querySelector(".eye").onclick = () => {
       if (!liveEl) return; dzSnapshot();
       hidden ? liveEl.removeAttribute("display") : liveEl.setAttribute("display", "none");
@@ -6697,6 +6697,39 @@ function dz3dHome() {
   dz3dTween({ panX: 0, panY: 30, zoom: 0.65 });
 }
 
+/* navegación de cámara compartida: órbita con izquierdo (fondo) o DERECHO
+   (en cualquier lado, incluso sobre un plano — el derecho JAMÁS dibuja);
+   paneo con Shift+arrastre o botón medio */
+function dz3dNavStart(e) {
+  const d3 = DZ.d3, stage = $("#dz3dStage");
+  if (!d3 || !stage) return;
+  const pan = e.shiftKey || e.button === 1;
+  const orbit = !pan && (e.button === 0 || e.button === 2);
+  if (!orbit && !pan) return;
+  const sx = e.clientX, sy = e.clientY;
+  cancelAnimationFrame(d3._tw);                    // frenar tween en curso
+  const base = { rx: d3.rx, ry: d3.ry, px: d3.panX, py: d3.panY };
+  try { stage.setPointerCapture(e.pointerId); } catch (err) { /* pointer sintético */ }
+  stage.classList.add("orbiting");
+  const move = ev => {
+    if (pan) { d3.panX = base.px + (ev.clientX - sx); d3.panY = base.py + (ev.clientY - sy); }
+    else {
+      d3.ry = base.ry + (ev.clientX - sx) * 0.4;
+      d3.rx = Math.max(-90, Math.min(90, base.rx - (ev.clientY - sy) * 0.4));
+      // órbita manual: ninguna vista predefinida queda "activa"
+      stage.querySelectorAll(".dz3d-gizmo [data-v]").forEach(x => x.classList.remove("active"));
+    }
+    dz3dApply();
+  };
+  const up = () => {
+    stage.removeEventListener("pointermove", move); stage.removeEventListener("pointerup", up);
+    stage.classList.remove("orbiting");
+  };
+  stage.addEventListener("pointermove", move);
+  stage.addEventListener("pointerup", up);
+  e.preventDefault();
+}
+
 /* cambia a una vista predefinida con animación (gizmo o teclas 1/3/7/5) */
 function dz3dView(v) {
   const [rx, ry] = DZ3D_VIEWS[v] || DZ3D_VIEWS.persp;
@@ -6826,11 +6859,13 @@ function dz3dBuild() {
       <button class="dz3d-or" data-or="face" title="Girar el plano para que mire de frente a la cámara actual (billboard)">↺ cámara</button>
     </div>
     <div class="dz3d-hud" id="dz3dHud">
-      <span><b>lápiz</b> dibuja en el aire</span><span><b>arrastrar</b> orbitar</span>
-      <span><b>rueda</b> zoom</span><span><b>Shift·medio</b> panear</span>
-      <span><b>2·clic</b> centrar</span><span><b>1 3 7 5</b> vistas</span>
-      <span><b>Shift+A</b> plano</span><span><b>Esc</b> salir</span>
-    </div>`;
+      <span><b>lápiz</b> dibuja en el aire</span><span><b>⌖</b> apuntá a un trazo: ancla ahí</span>
+      <span><b>arrastrar</b> orbitar</span><span><b>rueda</b> zoom</span>
+      <span><b>Shift·medio</b> panear</span><span><b>2·clic</b> centrar</span>
+      <span><b>1 3 7 5</b> vistas</span><span><b>Shift+A</b> plano</span><span><b>Esc</b> salir</span>
+    </div>
+    <div class="dz3d-coords" id="dz3dCoo" hidden></div>
+    <div class="dz3d-cross" id="dz3dCross" hidden></div>`;
   cv.appendChild(stage);
   dz3dApplyToolClass();
 
@@ -6855,37 +6890,56 @@ function dz3dBuild() {
     //    ahí, en el mismo gesto — se dibuja desde cualquier dirección ──
     const drawTool = DZ.tool === "pencil" || DZ.tool === "brush";
     if (drawTool && e.button === 0 && !e.shiftKey) { dz3dAirDraw(e); return; }
-    // Órbita con arrastre (izquierdo o derecho) sobre el FONDO;
-    // paneo con Shift+arrastre o botón medio.
-    const pan = e.shiftKey || e.button === 1;
-    const orbit = !pan && (e.button === 0 || e.button === 2);
-    if (!orbit && !pan) return;
-    const d3 = DZ.d3, sx = e.clientX, sy = e.clientY;
-    cancelAnimationFrame(d3._tw);                    // frenar tween en curso
-    const base = { rx: d3.rx, ry: d3.ry, px: d3.panX, py: d3.panY };
-    stage.setPointerCapture(e.pointerId);
-    stage.classList.add("orbiting");
-    const move = ev => {
-      if (pan) { d3.panX = base.px + (ev.clientX - sx); d3.panY = base.py + (ev.clientY - sy); }
-      else {
-        d3.ry = base.ry + (ev.clientX - sx) * 0.4;
-        d3.rx = Math.max(-90, Math.min(90, base.rx - (ev.clientY - sy) * 0.4));
-        // órbita manual: ninguna vista predefinida queda "activa"
-        stage.querySelectorAll(".dz3d-gizmo [data-v]").forEach(x => x.classList.remove("active"));
-      }
-      dz3dApply();
-    };
-    const up = () => {
-      stage.removeEventListener("pointermove", move); stage.removeEventListener("pointerup", up);
-      stage.classList.remove("orbiting");
-    };
-    stage.addEventListener("pointermove", move);
-    stage.addEventListener("pointerup", up);
-    e.preventDefault();
+    dz3dNavStart(e);
   });
   stage.addEventListener("dblclick", e => {
     if (overUI(e)) return;
     dz3dHome();                                      // doble clic en el fondo = centrar
+  });
+  // ── coordenadas x·y·z EN VIVO bajo el cursor (con lápiz/pincel) ──
+  // Muestra dónde va a caer el trazo; si hay un trazo existente bajo el
+  // cursor se ancla ahí (⌖ cyan). Throttled: no recalcula en cada pixel.
+  let cooT = 0;
+  stage.addEventListener("pointermove", e => {
+    const coo = $("#dz3dCoo"), cross = $("#dz3dCross");
+    if (!coo || !cross) return;
+    const drawingT = DZ.tool === "pencil" || DZ.tool === "brush";
+    if (!drawingT || overUI(e)) { coo.hidden = true; cross.hidden = true; return; }
+    const now = performance.now();
+    if (now - cooT < 70) return;
+    cooT = now;
+    const d3 = DZ.d3;
+    const vb = d3.vb || [0, 0, 1080, 1080];
+    const W = vb[2] || 1080, H = vb[3] || 1080;
+    const a = dz3dPickAnchor(e.clientX, e.clientY);
+    let world = a && a.world;
+    if (!world) {
+      // sin ancla: el punto caería en el plano billboard por el origen
+      const P = new DOMMatrix(); P.m34 = -1 / (parseFloat(getComputedStyle(stage).perspective) || 1400);
+      const B = new DOMMatrix().rotateAxisAngle(1, 0, 0, Math.round(-d3.rx)).rotateAxisAngle(0, 1, 0, Math.round(-d3.ry));
+      const M = P.translate(d3.panX, d3.panY).scale(d3.zoom)
+        .rotateAxisAngle(1, 0, 0, d3.rx).rotateAxisAngle(0, 1, 0, d3.ry).multiply(B);
+      const p = dz3dScreenToPlaneM(M, e.clientX, e.clientY);
+      if (p) world = B.transformPoint(new DOMPoint(p.x, p.y, 0, 1));
+    }
+    if (!world) { coo.hidden = true; cross.hidden = true; return; }
+    // coords en unidades del lienzo (x/y como las reglas, z como el slider)
+    const X = Math.round(world.x + W / 2 + (vb[0] || 0));
+    const Y = Math.round(world.y + H / 2 + (vb[1] || 0));
+    const Zu = Math.round(-world.z / DZ3D_DEPTH);
+    coo.textContent = `x ${X} · y ${Y} · z ${Zu}` + (a ? "  ⌖ anclado" : "");
+    coo.classList.toggle("anch", !!a);
+    coo.hidden = false;
+    const sr2 = stage.getBoundingClientRect();
+    cross.style.left = (e.clientX - sr2.left) + "px";
+    cross.style.top = (e.clientY - sr2.top) + "px";
+    cross.classList.toggle("anch", !!a);
+    cross.hidden = false;
+  });
+  stage.addEventListener("pointerleave", () => {
+    const coo = $("#dz3dCoo"), cross = $("#dz3dCross");
+    if (coo) coo.hidden = true;
+    if (cross) cross.hidden = true;
   });
   stage.addEventListener("contextmenu", e => e.preventDefault());
   stage.addEventListener("wheel", e => {
@@ -7027,13 +7081,15 @@ function dz3dAxisBadge() {
 function dz3dCardZ(card, el) {
   const z = parseFloat(el.getAttribute("data-z")) || 0;
   const [rx, ry] = dz3dRot(el);
-  // el plano se traslada en Z y se orienta libremente; se dibuja igual porque
-  // los pointer events se proyectan a coordenadas locales del plano rotado
-  card.style.transform = `translateZ(${(-z * DZ3D_DEPTH).toFixed(1)}px) ` +
+  const [ox, oy, oz] = dz3dOff(el);
+  // el plano se traslada (offset 3D + profundidad Z) y se orienta libremente;
+  // se dibuja igual porque las coordenadas se proyectan con la misma matriz
+  card.style.transform = `translate3d(${ox.toFixed(1)}px, ${oy.toFixed(1)}px, ${(oz - z * DZ3D_DEPTH).toFixed(1)}px) ` +
     `rotateX(${rx}deg) rotateY(${ry}deg)`;
   const tag = card.querySelector(".dz3d-tag");
   if (tag) tag.textContent = dzLayerLabel(el) + " · z=" + z +
-    (rx || ry ? ` · ${Math.round(rx)}°/${Math.round(ry)}°` : "");
+    (rx || ry ? ` · ${Math.round(rx)}°/${Math.round(ry)}°` : "") +
+    ((ox || oy || oz) ? " · ⌖" : "");
 }
 /* fija la orientación del plano i (presets y arrastre comparten esto) */
 function dz3dSetRot(i, rx, ry, commit) {
@@ -7052,44 +7108,116 @@ function dz3dSetRot(i, rx, ry, commit) {
    card (translateZ · rot3d). Como el plano es chato, el mapeo (u,v)→pantalla
    es una homografía 3x3 invertible: con ella dibujamos "en el aire" sin
    depender de offsetX (que solo existe si el evento cae sobre el plano). */
+/* offset 3D del plano (data-off3d="x,y,z" en px del mundo) — permite que un
+   plano pase por CUALQUIER punto del espacio, no solo por el eje del mundo:
+   la base de la precisión al dibujar (anclar la profundidad donde apuntás) */
+function dz3dOff(el) {
+  const o = (el.getAttribute("data-off3d") || "0,0,0").split(",").map(Number);
+  return [o[0] || 0, o[1] || 0, o[2] || 0];
+}
+/* matriz del plano en el espacio del MUNDO (sin cámara): offset + profundidad + orientación */
+function dz3dCardMatrix(el) {
+  const [ox, oy, oz] = dz3dOff(el);
+  const z = parseFloat(el.getAttribute("data-z")) || 0;
+  const [crx, cry] = dz3dRot(el);
+  return new DOMMatrix()
+    .translate(ox, oy, oz - z * DZ3D_DEPTH)
+    .rotateAxisAngle(1, 0, 0, crx)
+    .rotateAxisAngle(0, 1, 0, cry);
+}
 function dz3dPlaneMatrix(el) {
   const d3 = DZ.d3, stage = $("#dz3dStage");
   const persp = parseFloat(getComputedStyle(stage).perspective) || 1400;
-  const z = parseFloat(el.getAttribute("data-z")) || 0;
-  const [crx, cry] = dz3dRot(el);
   const P = new DOMMatrix();
   P.m34 = -1 / persp;                        // w = 1 − z/d (perspectiva CSS)
   return P.translate(d3.panX, d3.panY)
     .scale(d3.zoom)
     .rotateAxisAngle(1, 0, 0, d3.rx)
     .rotateAxisAngle(0, 1, 0, d3.ry)
-    .translate(0, 0, -z * DZ3D_DEPTH)
-    .rotateAxisAngle(1, 0, 0, crx)
-    .rotateAxisAngle(0, 1, 0, cry);
+    .multiply(dz3dCardMatrix(el));
 }
-/* punto del mouse (clientX/Y) → coordenadas SVG del plano `el`, o null si el
-   plano está de canto / detrás de cámara */
-function dz3dScreenToPlane(el, clientX, clientY) {
-  const d3 = DZ.d3, stage = $("#dz3dStage");
-  if (!d3 || !stage) return null;
+/* núcleo de la proyección inversa: mouse → coords CENTRADAS del plano de
+   matriz M (homografía 3x3 invertida por adjunta) */
+function dz3dScreenToPlaneM(M, clientX, clientY) {
+  const stage = $("#dz3dStage");
+  if (!stage) return null;
   const r = stage.getBoundingClientRect();
   const mx = clientX - (r.left + r.width / 2);
   const my = clientY - (r.top + r.height / 2);
-  const M = dz3dPlaneMatrix(el);
-  // homografía (u,v,1) → (X·w, Y·w, w): columnas x·y·afín de la 4x4
   const a = M.m11, b = M.m21, c = M.m41,
         d = M.m12, e = M.m22, f = M.m42,
         g = M.m14, h = M.m24, i = M.m44;
   const det = a * (e * i - f * h) - b * (d * i - f * g) + c * (d * h - e * g);
   if (Math.abs(det) < 1e-9) return null;     // plano de canto: sin intersección útil
-  // inversa por adjunta, aplicada a (mx, my, 1)
   const u = ((e * i - f * h) * mx + (c * h - b * i) * my + (b * f - c * e));
   const v = ((f * g - d * i) * mx + (a * i - c * g) * my + (c * d - a * f));
   const w = ((d * h - e * g) * mx + (b * g - a * h) * my + (a * e - b * d));
   if (Math.abs(w) < 1e-9) return null;
+  return { x: u / w, y: v / w };
+}
+/* punto del mouse (clientX/Y) → coordenadas SVG del plano `el` */
+function dz3dScreenToPlane(el, clientX, clientY) {
+  const d3 = DZ.d3;
+  if (!d3) return null;
+  const p = dz3dScreenToPlaneM(dz3dPlaneMatrix(el), clientX, clientY);
+  if (!p) return null;
   const vb = d3.vb || [0, 0, 1080, 1080];
   const W = vb[2] || 1080, H = vb[3] || 1080;
-  return { x: u / w + W / 2 + (vb[0] || 0), y: v / w + H / 2 + (vb[1] || 0) };
+  return { x: p.x + W / 2 + (vb[0] || 0), y: p.y + H / 2 + (vb[1] || 0) };
+}
+/* distancia perpendicular de un punto 3D (mundo) al plano `el` */
+function dz3dPlaneDist(el, p) {
+  const [ox, oy, oz] = dz3dOff(el);
+  const z = parseFloat(el.getAttribute("data-z")) || 0;
+  const [crx, cry] = dz3dRot(el);
+  const n = new DOMMatrix().rotateAxisAngle(1, 0, 0, crx).rotateAxisAngle(0, 1, 0, cry)
+    .transformPoint(new DOMPoint(0, 0, 1, 0));           // normal (w=0: solo rota)
+  return Math.abs(n.x * (p.x - ox) + n.y * (p.y - oy) + n.z * (p.z - (oz - z * DZ3D_DEPTH)));
+}
+/* punto de TINTA más cercano a (x,y) en coords del plano, o null si no hay
+   nada a menos de `tol` — muestrea los trazos (bbox primero, después puntos) */
+function dz3dNearestInk(root, x, y, tol) {
+  let best = null, bestD = tol * tol;
+  for (const g of root.querySelectorAll("path,line,polyline,polygon,rect,circle,ellipse")) {
+    let b; try { b = g.getBBox(); } catch (err) { continue; }
+    if (x < b.x - tol || x > b.x + b.width + tol || y < b.y - tol || y > b.y + b.height + tol) continue;
+    if (typeof g.getTotalLength !== "function") continue;
+    let L; try { L = g.getTotalLength(); } catch (err) { continue; }
+    if (!L) continue;
+    const step = Math.max(4, L / 300);
+    for (let s = 0; s <= L; s += step) {
+      const q = g.getPointAtLength(s);
+      const dd = (q.x - x) * (q.x - x) + (q.y - y) * (q.y - y);
+      if (dd < bestD) { bestD = dd; best = { x: q.x, y: q.y }; }
+    }
+  }
+  return best;
+}
+/* busca BAJO EL CURSOR un punto de dibujo existente y devuelve su punto 3D
+   en el mundo — el ancla de profundidad: el trazo nuevo pasa POR AHÍ, que es
+   como Feather logra que dos trazos "se toquen" aunque los dibujes desde
+   ángulos distintos. Si hay varios candidatos gana el más cercano a cámara. */
+function dz3dPickAnchor(clientX, clientY) {
+  const d3 = DZ.d3;
+  if (!d3) return null;
+  const vb = d3.vb || [0, 0, 1080, 1080];
+  const W = vb[2] || 1080, H = vb[3] || 1080;
+  let best = null;
+  for (let i = 0; i < d3.els.length; i++) {
+    const el = d3.els[i];
+    if (dz3dIsBackdrop(el, vb)) continue;
+    const p = dz3dScreenToPlane(el, clientX, clientY);
+    if (!p) continue;
+    const card = document.querySelector(`#dz3dWorld .dz3d-card[data-i="${i}"]`);
+    const content = card && card.querySelector('[data-dz3d="content"]');
+    const ink = content && dz3dNearestInk(content, p.x, p.y, 14);
+    if (!ink) continue;
+    // anclar al punto de TINTA exacto (no al cursor): el cruce es perfecto
+    const local = new DOMPoint(ink.x - (vb[0] || 0) - W / 2, ink.y - (vb[1] || 0) - H / 2, 0, 1);
+    const w = dz3dPlaneMatrix(el).transformPoint(local).w;   // menor w = más cerca
+    if (!best || w < best.w) best = { w, world: dz3dCardMatrix(el).transformPoint(local), el };
+  }
+  return best;
 }
 
 /* commit de un trazo terminado sobre la capa `el` (índice idx): compartido
@@ -7122,6 +7250,8 @@ function dz3dCommitStroke(el, idx, pts, tool, drawColor, drawW) {
     if (z) stroke.setAttribute("data-z", z);
     const rot = el.getAttribute("data-rot3d");
     if (rot) stroke.setAttribute("data-rot3d", rot);
+    const off = el.getAttribute("data-off3d");
+    if (off) stroke.setAttribute("data-off3d", off);
     el.parentNode.insertBefore(stroke, el.nextSibling);
     const mir = dzMirrorClone(stroke);
     DZ.dirty = true; dzPersist();
@@ -7141,18 +7271,32 @@ function dz3dAirDraw(e) {
   if (!svg || !d3 || !stage) return;
   const tool = DZ.tool === "brush" ? "brush" : "pencil";
   const rx = Math.round(-d3.rx), ry = Math.round(-d3.ry);
+  // ANCLA DE PROFUNDIDAD: si apuntás a un trazo existente, el plano nuevo
+  // pasa por ESE punto 3D — dos elipses dibujadas desde ángulos distintos se
+  // cruzan donde las apuntaste, no cada una por su lado (precisión Feather)
+  const anchor = dz3dPickAnchor(e.clientX, e.clientY);
   // ¿ya hay un plano <g> mirando a esta cámara? (±8°: no explotar en planos)
-  const near = (p, q) => Math.abs(p - q) <= 8;
-  let idx = d3.els.findIndex(el => {
-    if (el.tagName.toLowerCase() !== "g") return false;
+  const dAng = (p, q) => Math.abs(((p - q) % 360 + 540) % 360 - 180);
+  const near = (p, q) => dAng(p, q) <= 8;
+  const facing = el => {
+    if (!el || el.tagName.toLowerCase() !== "g" || dz3dIsBackdrop(el, d3.vb)) return false;
     const [erx, ery] = dz3dRot(el);
-    return near(erx, rx) && near(ery, ry);
-  });
+    if (!near(erx, rx) || !near(ery, ry)) return false;
+    // con ancla: además tiene que pasar cerca del punto anclado
+    return !anchor || dz3dPlaneDist(el, anchor.world) <= 8;
+  };
+  // preferir el plano ACTIVO si sirve: el trazo que sigue cae en el mismo
+  // plano que el anterior (continuidad), no en el primer <g> que matchee
+  let idx = facing(d3.els[d3.act]) ? d3.act : d3.els.findIndex(facing);
   if (idx < 0) {
     dzSnapshot();
     const g = document.createElementNS(SVGNS, "g");
     g.setAttribute("data-low", "plano");
     if (rx || ry) g.setAttribute("data-rot3d", rx + "," + ry);
+    if (anchor) {
+      const a = anchor.world;
+      g.setAttribute("data-off3d", `${a.x.toFixed(1)},${a.y.toFixed(1)},${a.z.toFixed(1)}`);
+    }
     svg.appendChild(g);
     DZ.dirty = true;
     dz3dInsertCard(g, d3.els.length);
@@ -7301,8 +7445,9 @@ function dz3dZHandlePlace() {
   const el = d3.els[d3.act];
   const z = parseFloat(el.getAttribute("data-z")) || 0;
   const [rx, ry] = dz3dRot(el);
+  const [ox, oy, oz] = dz3dOff(el);
   const W = (d3.vb && d3.vb[2]) || 1080, H = (d3.vb && d3.vb[3]) || 1080;
-  const base = `translateZ(${(-z * DZ3D_DEPTH).toFixed(1)}px) rotateX(${rx}deg) rotateY(${ry}deg)`;
+  const base = `translate3d(${ox.toFixed(1)}px, ${oy.toFixed(1)}px, ${(oz - z * DZ3D_DEPTH).toFixed(1)}px) rotateX(${rx}deg) rotateY(${ry}deg)`;
   if (zh) zh.style.transform = base + ` translate(${W / 2 + 30}px, 0)`;
   if (rh) rh.style.transform = base + ` translate(${-W / 2 - 30}px, ${-H / 2}px)`;
 }
@@ -7419,6 +7564,9 @@ function dz3dWireCard(card, cs) {
   surf.addEventListener("pointerdown", e => {
     e.stopPropagation();
     const d3 = DZ.d3;
+    // botón derecho/medio/Shift SIEMPRE navegan, incluso sobre un plano —
+    // el derecho jamás dibuja (antes pintaba si caía sobre el plano activo)
+    if (e.button !== 0 || e.shiftKey) { e.preventDefault(); return dz3dNavStart(e); }
     // índice y capa se leen AL MOMENTO del evento (data-i): las cards pueden
     // renumerarse cuando se insertan planos nuevos sin reconstruir el mundo
     const i = +card.dataset.i;
@@ -7561,7 +7709,7 @@ function dz3dExit(silent) {
     dzPersist();
     dzBuildLayers();
     dzApplyZoom();
-    dzSetStatus("Lienzo plano — la profundidad Z de cada capa quedó guardada (diorama/parallax)");
+    dzSetStatus("Lienzo plano — la profundidad Z de cada capa quedó guardada (cámara multiplano/parallax)");
   }
 }
 
