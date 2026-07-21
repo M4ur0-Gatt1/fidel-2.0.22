@@ -6687,9 +6687,9 @@ function dz3dToggle() {
   DZ.d3 = { rx: -18, ry: 28, zoom: 0.65, panX: 0, panY: 30, act: -1, els: [] };
   $("#dz3DBtn").classList.add("active");
   dz3dBuild();
-  dzSetStatus("Espacio 3D — arrastrá el fondo: orbitar · rueda: zoom al cursor · Shift/botón medio: panear · " +
-    "doble clic en el fondo: centrar · 1/3/7/5: vistas · Shift+A: plano nuevo · Esc: salir · " +
-    "lápiz/pincel dibujan sobre el plano activo");
+  dzSetStatus("Espacio 3D — con el lápiz dibujás DIRECTO en el aire desde cualquier ángulo (el plano se crea solo) · " +
+    "arrastrá el fondo: orbitar · rueda: zoom al cursor · Shift/botón medio: panear · " +
+    "doble clic: centrar · 1/3/7/5: vistas · Shift+A: plano · Esc: salir");
 }
 
 /* vuelve la cámara a su encuadre inicial (doble clic en el fondo o tecla F) */
@@ -6813,9 +6813,10 @@ function dz3dBuild() {
       <button class="dz3d-or" data-or="face" title="Girar el plano para que mire de frente a la cámara actual (billboard)">↺ cámara</button>
     </div>
     <div class="dz3d-hud" id="dz3dHud">
-      <span><b>arrastrar</b> orbitar</span><span><b>rueda</b> zoom</span>
-      <span><b>Shift·medio</b> panear</span><span><b>2·clic</b> centrar</span>
-      <span><b>1 3 7 5</b> vistas</span><span><b>Shift+A</b> plano</span><span><b>Esc</b> salir</span>
+      <span><b>lápiz</b> dibuja en el aire</span><span><b>arrastrar</b> orbitar</span>
+      <span><b>rueda</b> zoom</span><span><b>Shift·medio</b> panear</span>
+      <span><b>2·clic</b> centrar</span><span><b>1 3 7 5</b> vistas</span>
+      <span><b>Shift+A</b> plano</span><span><b>Esc</b> salir</span>
     </div>`;
   cv.appendChild(stage);
   dz3dApplyToolClass();
@@ -6836,10 +6837,13 @@ function dz3dBuild() {
     e.target.closest(".dz3d-zbar") || e.target.closest(".dz3d-hud");
   stage.addEventListener("pointerdown", e => {
     if (overUI(e)) return;
-    // Órbita con arrastre (izquierdo o derecho) sobre el FONDO — como Feather:
-    // navegás con el mismo gesto con que dibujás; los planos siguen recibiendo
-    // el trazo porque este handler solo corre sobre el fondo del stage.
-    // Paneo con Shift+arrastre o botón medio.
+    // ── DIBUJO EN EL AIRE (Feather): con lápiz/pincel, arrastrar sobre el
+    //    VACÍO crea (o reutiliza) un plano mirando a cámara y el trazo cae
+    //    ahí, en el mismo gesto — se dibuja desde cualquier dirección ──
+    const drawTool = DZ.tool === "pencil" || DZ.tool === "brush";
+    if (drawTool && e.button === 0 && !e.shiftKey) { dz3dAirDraw(e); return; }
+    // Órbita con arrastre (izquierdo o derecho) sobre el FONDO;
+    // paneo con Shift+arrastre o botón medio.
     const pan = e.shiftKey || e.button === 1;
     const orbit = !pan && (e.button === 0 || e.button === 2);
     if (!orbit && !pan) return;
@@ -7021,6 +7025,49 @@ function dz3dSetRot(i, rx, ry, commit) {
   if (i === d3.act) dz3dZHandlePlace();
   if (commit) { DZ.dirty = true; dzPersist(); }
 }
+/* ── dibujo EN EL AIRE (gesto Feather): con lápiz/pincel, arrastrar sobre el
+   vacío dibuja YA — se reutiliza el plano billboard que mira a la cámara
+   actual, o se crea uno nuevo, y el pointerdown se redespacha a su superficie:
+   el navegador proyecta las coordenadas al plano y el trazo arranca en el
+   mismo gesto, sin soltar el lápiz ── */
+function dz3dAirDraw(e) {
+  const svg = $("#dzCanvas").querySelector("svg");
+  const d3 = DZ.d3;
+  if (!svg || !d3) return;
+  const rx = Math.round(-d3.rx), ry = Math.round(-d3.ry);
+  // ¿ya hay un plano <g> mirando a esta cámara? (±8°: no explotar en planos)
+  const near = (a, b) => Math.abs(a - b) <= 8;
+  let idx = d3.els.findIndex(el => {
+    if (el.tagName.toLowerCase() !== "g") return false;
+    const [erx, ery] = dz3dRot(el);
+    return near(erx, rx) && near(ery, ry);
+  });
+  if (idx < 0) {
+    dzSnapshot();
+    const g = document.createElementNS(SVGNS, "g");
+    g.setAttribute("data-low", "plano");
+    if (rx || ry) g.setAttribute("data-rot3d", rx + "," + ry);
+    svg.appendChild(g);
+    DZ.dirty = true;
+    dz3dInsertCard(g, d3.els.length);
+    idx = d3.els.length - 1;
+    dzBuildLayers();
+  }
+  dz3dActivate(idx);
+  const card = document.querySelector(`#dz3dWorld .dz3d-card[data-i="${idx}"]`);
+  const surf = card && card.querySelector('[data-dz3d="surf"]');
+  if (!surf) return;
+  // redespachar el gesto al plano: offsetX/offsetY llegan proyectados a sus
+  // coordenadas locales (mismo mecanismo que el dibujo sobre planos rotados)
+  surf.dispatchEvent(new PointerEvent("pointerdown", {
+    bubbles: true, cancelable: true, isPrimary: true,
+    pointerId: e.pointerId, pointerType: e.pointerType,
+    pressure: e.pressure || 0.5, button: 0, buttons: 1,
+    clientX: e.clientX, clientY: e.clientY,
+  }));
+  e.preventDefault();
+}
+
 /* agrega un plano nuevo para dibujar, orientado frente a la cámara (billboard) */
 function dz3dAddPlane() {
   const svg = $("#dzCanvas").querySelector("svg");
