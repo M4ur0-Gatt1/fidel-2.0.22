@@ -6697,6 +6697,39 @@ function dz3dHome() {
   dz3dTween({ panX: 0, panY: 30, zoom: 0.65 });
 }
 
+/* navegación de cámara compartida: órbita con izquierdo (fondo) o DERECHO
+   (en cualquier lado, incluso sobre un plano — el derecho JAMÁS dibuja);
+   paneo con Shift+arrastre o botón medio */
+function dz3dNavStart(e) {
+  const d3 = DZ.d3, stage = $("#dz3dStage");
+  if (!d3 || !stage) return;
+  const pan = e.shiftKey || e.button === 1;
+  const orbit = !pan && (e.button === 0 || e.button === 2);
+  if (!orbit && !pan) return;
+  const sx = e.clientX, sy = e.clientY;
+  cancelAnimationFrame(d3._tw);                    // frenar tween en curso
+  const base = { rx: d3.rx, ry: d3.ry, px: d3.panX, py: d3.panY };
+  try { stage.setPointerCapture(e.pointerId); } catch (err) { /* pointer sintético */ }
+  stage.classList.add("orbiting");
+  const move = ev => {
+    if (pan) { d3.panX = base.px + (ev.clientX - sx); d3.panY = base.py + (ev.clientY - sy); }
+    else {
+      d3.ry = base.ry + (ev.clientX - sx) * 0.4;
+      d3.rx = Math.max(-90, Math.min(90, base.rx - (ev.clientY - sy) * 0.4));
+      // órbita manual: ninguna vista predefinida queda "activa"
+      stage.querySelectorAll(".dz3d-gizmo [data-v]").forEach(x => x.classList.remove("active"));
+    }
+    dz3dApply();
+  };
+  const up = () => {
+    stage.removeEventListener("pointermove", move); stage.removeEventListener("pointerup", up);
+    stage.classList.remove("orbiting");
+  };
+  stage.addEventListener("pointermove", move);
+  stage.addEventListener("pointerup", up);
+  e.preventDefault();
+}
+
 /* cambia a una vista predefinida con animación (gizmo o teclas 1/3/7/5) */
 function dz3dView(v) {
   const [rx, ry] = DZ3D_VIEWS[v] || DZ3D_VIEWS.persp;
@@ -6855,33 +6888,7 @@ function dz3dBuild() {
     //    ahí, en el mismo gesto — se dibuja desde cualquier dirección ──
     const drawTool = DZ.tool === "pencil" || DZ.tool === "brush";
     if (drawTool && e.button === 0 && !e.shiftKey) { dz3dAirDraw(e); return; }
-    // Órbita con arrastre (izquierdo o derecho) sobre el FONDO;
-    // paneo con Shift+arrastre o botón medio.
-    const pan = e.shiftKey || e.button === 1;
-    const orbit = !pan && (e.button === 0 || e.button === 2);
-    if (!orbit && !pan) return;
-    const d3 = DZ.d3, sx = e.clientX, sy = e.clientY;
-    cancelAnimationFrame(d3._tw);                    // frenar tween en curso
-    const base = { rx: d3.rx, ry: d3.ry, px: d3.panX, py: d3.panY };
-    stage.setPointerCapture(e.pointerId);
-    stage.classList.add("orbiting");
-    const move = ev => {
-      if (pan) { d3.panX = base.px + (ev.clientX - sx); d3.panY = base.py + (ev.clientY - sy); }
-      else {
-        d3.ry = base.ry + (ev.clientX - sx) * 0.4;
-        d3.rx = Math.max(-90, Math.min(90, base.rx - (ev.clientY - sy) * 0.4));
-        // órbita manual: ninguna vista predefinida queda "activa"
-        stage.querySelectorAll(".dz3d-gizmo [data-v]").forEach(x => x.classList.remove("active"));
-      }
-      dz3dApply();
-    };
-    const up = () => {
-      stage.removeEventListener("pointermove", move); stage.removeEventListener("pointerup", up);
-      stage.classList.remove("orbiting");
-    };
-    stage.addEventListener("pointermove", move);
-    stage.addEventListener("pointerup", up);
-    e.preventDefault();
+    dz3dNavStart(e);
   });
   stage.addEventListener("dblclick", e => {
     if (overUI(e)) return;
@@ -7142,12 +7149,16 @@ function dz3dAirDraw(e) {
   const tool = DZ.tool === "brush" ? "brush" : "pencil";
   const rx = Math.round(-d3.rx), ry = Math.round(-d3.ry);
   // ¿ya hay un plano <g> mirando a esta cámara? (±8°: no explotar en planos)
-  const near = (p, q) => Math.abs(p - q) <= 8;
-  let idx = d3.els.findIndex(el => {
-    if (el.tagName.toLowerCase() !== "g") return false;
+  const dAng = (p, q) => Math.abs(((p - q) % 360 + 540) % 360 - 180);
+  const near = (p, q) => dAng(p, q) <= 8;
+  const facing = el => {
+    if (!el || el.tagName.toLowerCase() !== "g" || dz3dIsBackdrop(el, d3.vb)) return false;
     const [erx, ery] = dz3dRot(el);
     return near(erx, rx) && near(ery, ry);
-  });
+  };
+  // preferir el plano ACTIVO si mira a cámara: el trazo que sigue cae en el
+  // mismo plano que el anterior (continuidad), no en el primer <g> que matchee
+  let idx = facing(d3.els[d3.act]) ? d3.act : d3.els.findIndex(facing);
   if (idx < 0) {
     dzSnapshot();
     const g = document.createElementNS(SVGNS, "g");
@@ -7419,6 +7430,9 @@ function dz3dWireCard(card, cs) {
   surf.addEventListener("pointerdown", e => {
     e.stopPropagation();
     const d3 = DZ.d3;
+    // botón derecho/medio/Shift SIEMPRE navegan, incluso sobre un plano —
+    // el derecho jamás dibuja (antes pintaba si caía sobre el plano activo)
+    if (e.button !== 0 || e.shiftKey) { e.preventDefault(); return dz3dNavStart(e); }
     // índice y capa se leen AL MOMENTO del evento (data-i): las cards pueden
     // renumerarse cuando se insertan planos nuevos sin reconstruir el mundo
     const i = +card.dataset.i;
