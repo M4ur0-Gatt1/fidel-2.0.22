@@ -87,7 +87,7 @@ header {
   background: var(--panel2); color: var(--txt); border: none; outline: none;
   font: 500 12.5px 'Figtree', sans-serif; cursor: pointer; max-width: 210px;
 }
-.dot { width: 7px; height: 7px; border-radius: 99px; background: var(--green); display: inline-block; flex: none; }
+.dot { width: 7px; height: 7px; border-radius: 99px; background: var(--cyan); display: inline-block; flex: none; }
 .dot.off { background: var(--faint); }
 .dot.warn { background: var(--orange); animation: pulse 1.2s infinite; }
 
@@ -109,7 +109,7 @@ header {
   font: 400 12px 'JetBrains Mono', monospace; color: var(--mut);
 }
 .mrow:hover { background: var(--panel2); color: var(--txt); }
-.mrow.cur { color: var(--green); }
+.mrow.cur { color: var(--cyan); }
 .mrow.cur::before { content: "● "; }
 .search {
   display: flex; align-items: center; gap: 8px; background: transparent;
@@ -209,9 +209,9 @@ header {
 .CodeMirror-selected { background: var(--panel2) !important; }
 .CodeMirror-activeline-background { background: var(--line2); }
 /* resaltado en vivo de las líneas que acaba de editar el agente (se desvanece) */
-.cm-edited { background: var(--greensoft); animation: cm-edit-flash 2.2s ease-out; }
+.cm-edited { background: var(--redsoft); animation: cm-edit-flash 2.2s ease-out; }
 @keyframes cm-edit-flash {
-  0% { background: rgba(46,160,67,.38); } 100% { background: var(--greensoft); }
+  0% { background: rgba(240,69,14,.38); } 100% { background: var(--redsoft); }
 }
 .cm-s-default .cm-keyword { color: var(--code-kw); }
 .cm-s-default .cm-string, .cm-s-default .cm-string-2 { color: var(--code-str); }
@@ -220,7 +220,7 @@ header {
 .cm-s-default .cm-number, .cm-s-default .cm-atom { color: var(--code-num); }
 .cm-s-default .cm-variable, .cm-s-default .cm-variable-2, .cm-s-default .cm-property,
 .cm-s-default .cm-operator, .cm-s-default .cm-punctuation, .cm-s-default .cm-meta { color: var(--txt); }
-.agent-line { background: var(--greensoft); box-shadow: inset 2px 0 0 var(--green); }
+.agent-line { background: var(--redsoft); box-shadow: inset 2px 0 0 var(--red); }
 
 /* terminal */
 .term { border-top: 1px solid var(--line); background: var(--panel); }
@@ -250,8 +250,8 @@ header {
 .ag-h { display: flex; align-items: center; gap: 8px; padding: 10px 14px; border-bottom: 1px solid var(--line); }
 .ag-t { font-weight: 600; font-size: 13px; }
 .badge {
-  font: 500 10.5px 'JetBrains Mono', monospace; color: var(--green);
-  background: var(--greensoft); border-radius: 99px; padding: 2px 8px;
+  font: 500 10.5px 'JetBrains Mono', monospace; color: var(--red);
+  background: var(--redsoft); border-radius: 99px; padding: 2px 8px;
 }
 .badge.off { color: var(--mut); background: var(--panel2); }
 .gbtn {
@@ -312,14 +312,14 @@ header {
 /* barra viva de "trabajando": latido durante todo el turno del agente */
 .working-on {
   flex: none; margin: 6px 10px 0; padding: 6px 10px; border-radius: 8px;
-  background: var(--greensoft); color: var(--txt);
+  background: var(--redsoft); color: var(--txt);
   font: 500 11.5px 'JetBrains Mono', monospace;
   border: 1px solid var(--line); display: flex; align-items: center; gap: 8px;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
 .working-on::before {
   content: ""; width: 8px; height: 8px; border-radius: 50%; flex: none;
-  background: var(--green); animation: lowpulse 1s ease-in-out infinite;
+  background: var(--red); animation: lowpulse 1s ease-in-out infinite;
 }
 @keyframes lowpulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 .working-on[hidden] { display: none; }
@@ -348,7 +348,7 @@ header {
 .m-agent { display: flex; flex-direction: column; gap: 8px; max-width: 95%; }
 .m-head { display: flex; align-items: center; gap: 7px; }
 .m-ava {
-  width: 18px; height: 18px; border-radius: 6px; background: var(--green);
+  width: 18px; height: 18px; border-radius: 6px; background: var(--red);
   display: flex; align-items: center; justify-content: center;
   color: var(--bg); font-size: 9px; flex: none;
 }
@@ -374,7 +374,7 @@ header {
 }
 .card-h .n { color: var(--mut); font-weight: 400; }
 .prog { flex: 1; height: 3px; border-radius: 99px; background: var(--line); overflow: hidden; }
-.prog > div { height: 100%; border-radius: 99px; background: var(--green); width: 0%; transition: width .3s ease; }
+.prog > div { height: 100%; border-radius: 99px; background: var(--red); width: 0%; transition: width .3s ease; }
 .card-b { padding: 8px 12px; display: flex; flex-direction: column; gap: 5px; font-size: 12px; color: var(--mut); }
 .step { user-select: text; }
 .step .ck { color: var(--green); }
@@ -420,7 +420,7 @@ header {
   overflow: hidden; white-space: nowrap; text-overflow: ellipsis; flex: none;
 }
 .working-on::before { content: ""; width: 6px; height: 6px; border-radius: 99px;
-  background: var(--green); flex: none; animation: wo-pulse 1.4s ease-in-out infinite; }
+  background: var(--red); flex: none; animation: wo-pulse 1.4s ease-in-out infinite; }
 .working-on[hidden] { display: none; }
 @keyframes wo-pulse { 0%, 100% { opacity: .4; } 50% { opacity: 1; } }
 
@@ -522,11 +522,11 @@ footer {
   flex: 2; display: flex; align-items: center; gap: 7px; cursor: pointer;
   font: 400 11px 'Figtree', sans-serif; color: var(--mut); text-transform: none;
 }
-.agrow .agchk input { width: auto; accent-color: var(--green); flex: none; }
+.agrow .agchk input { width: auto; accent-color: var(--cyan); flex: none; }
 /* ⚙ → Redes Sociales: filas de conexión OAuth */
 .soc-row label { width: 170px; }
 .soc-row .soc-st {
-  flex: 1; font: 500 11.5px 'JetBrains Mono', monospace; color: var(--green);
+  flex: 1; font: 500 11.5px 'JetBrains Mono', monospace; color: var(--cyan);
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 .soc-row button { flex: none; padding: 6px 12px; }
@@ -550,7 +550,7 @@ footer {
 }
 .cmp-field:focus { border-color: var(--mut); }
 .crow { display: flex; align-items: center; gap: 10px; padding: 6px 2px; font-size: 12.5px; cursor: pointer; }
-.crow input { accent-color: var(--green); width: 15px; height: 15px; }
+.crow input { accent-color: var(--cyan); width: 15px; height: 15px; }
 .crow .cm-model { color: var(--mut); font: 400 11px 'JetBrains Mono', monospace; }
 /* filas de lista (herramientas, plantillas, historial) */
 .listrow {
@@ -574,8 +574,8 @@ footer {
   content: ""; width: 7px; height: 7px; border-radius: 99px;
   background: var(--faint); opacity: .5;
 }
-.soc-chip.on { color: var(--green); border-color: var(--green); background: var(--greensoft); }
-.soc-chip.on::before { background: var(--green); opacity: 1; }
+.soc-chip.on { color: var(--cyan); border-color: var(--cyan); background: var(--cyansoft); }
+.soc-chip.on::before { background: var(--cyan); opacity: 1; }
 .soc-btn { display: inline-flex; align-items: center; gap: 6px; white-space: nowrap; }
 .soc-btn .ico { width: 13px; height: 13px; }
 .soc-l2 { margin-left: 10px; }
@@ -612,8 +612,7 @@ body.light .krow input[type="datetime-local"] { color-scheme: light; }
 #dz3dStage {
   position: absolute; inset: 0; overflow: hidden; z-index: 5;
   perspective: 1400px;
-  background: radial-gradient(ellipse at 50% 42%, rgba(51,181,232,.06), transparent 62%),
-              var(--bg);
+  background: #D9D9D6;              /* gris claro fijo: se ven las líneas de dibujo (estilo Feather) */
   touch-action: none;                 /* el stylus/tablet orbita sin scrollear */
 }
 .dz3d-world {
@@ -623,26 +622,18 @@ body.light .krow input[type="datetime-local"] { color-scheme: light; }
 .dz3d-grid {
   position: absolute; left: 0; top: 0;
   background:
-    repeating-linear-gradient(0deg, rgba(255,255,255,.16) 0 1px, transparent 1px 450px),
-    repeating-linear-gradient(90deg, rgba(255,255,255,.16) 0 1px, transparent 1px 450px),
-    repeating-linear-gradient(0deg, rgba(255,255,255,.07) 0 1px, transparent 1px 90px),
-    repeating-linear-gradient(90deg, rgba(255,255,255,.07) 0 1px, transparent 1px 90px);
-  border: 1px solid rgba(255,255,255,.14);
-}
-body.light .dz3d-grid {
-  background:
-    repeating-linear-gradient(0deg, rgba(0,0,0,.16) 0 1px, transparent 1px 450px),
-    repeating-linear-gradient(90deg, rgba(0,0,0,.16) 0 1px, transparent 1px 450px),
+    repeating-linear-gradient(0deg, rgba(0,0,0,.20) 0 1px, transparent 1px 450px),
+    repeating-linear-gradient(90deg, rgba(0,0,0,.20) 0 1px, transparent 1px 450px),
     repeating-linear-gradient(0deg, rgba(0,0,0,.08) 0 1px, transparent 1px 90px),
     repeating-linear-gradient(90deg, rgba(0,0,0,.08) 0 1px, transparent 1px 90px);
-  border-color: rgba(0,0,0,.14);
+  border: 1px solid rgba(0,0,0,.18);
 }
 /* malla de edición + reglas del plano activo (toggle en el gizmo) */
 .dz3d-mesh, .dz3d-rulers { display: none; pointer-events: none; }
 #dz3dStage.show-mesh .dz3d-card.act .dz3d-mesh { display: block; }
 #dz3dStage.show-rulers .dz3d-card.act .dz3d-rulers { display: block; }
-.dz3d-mesh line.mn { stroke: rgba(51,181,232,.14); stroke-width: 1; vector-effect: non-scaling-stroke; }
-.dz3d-mesh line.mj { stroke: rgba(51,181,232,.30); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.dz3d-mesh line.mn { stroke: rgba(51,181,232,.28); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.dz3d-mesh line.mj { stroke: rgba(51,181,232,.48); stroke-width: 1; vector-effect: non-scaling-stroke; }
 .dz3d-rulers .rbg { fill: rgba(11,11,12,.72); }
 body.light .dz3d-rulers .rbg { fill: rgba(245,244,241,.78); }
 .dz3d-rulers .rx { stroke: #E5484D; stroke-width: 1; vector-effect: non-scaling-stroke; }
@@ -678,12 +669,12 @@ body.light .dz3d-rulers .rbg { fill: rgba(245,244,241,.78); }
   transition: outline-color .12s ease;
 }
 /* solo el plano ACTIVO muestra su marco (para saber dónde dibujás) */
-.dz3d-card.act { outline: 2px solid var(--red); background: rgba(240,69,14,.03); }
+.dz3d-card.act { outline: 2px solid var(--red); background: rgba(255,255,255,.55); }
 .dz3d-card:not(.act):hover { outline: 1px solid rgba(120,120,120,.35); }
 /* los svg de los planos NO llevan el fondo blanco del lienzo (.dz-canvas svg
    background:#fff) — eso hacía que cada plano/línea se viera como un rectángulo
    BLANCO opaco tapando todo en el 3D. Transparentes: solo se ve el dibujo. */
-.dz3d-card svg { display: block; cursor: crosshair; background: none !important; }
+.dz3d-card svg { display: block; cursor: crosshair; background: rgba(255,255,255,.40) !important; }
 /* al DIBUJAR, solo la superficie del plano ACTIVO recibe el trazo → el dibujo
    cae en el plano que elegiste (piso/pared/el que sea), no en el que quedó
    arriba (el papel blanco). Con la flecha de selección, todos son clickeables
@@ -1294,7 +1285,7 @@ body.light .dz3d-rulers .rbg { fill: rgba(245,244,241,.78); }
   line-height: 18px; font-size: 14px; font-weight: 600;
 }
 .dz-sw-pro {
-  background: var(--panel2); color: var(--green); text-align: center;
+  background: var(--panel2); color: var(--red); text-align: center;
   line-height: 18px; font-size: 12px;
 }
 /* paletas profesionales (modal) */

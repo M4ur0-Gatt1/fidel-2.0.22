@@ -6764,9 +6764,13 @@ function dz3dBuild() {
   stage.addEventListener("pointerdown", e => {
     if (e.target.closest(".dz3d-card") || e.target.closest(".dz3d-gizmo") ||
         e.target.closest(".dz3d-zbar")) return;
+    // Órbita SOLO con click derecho; paneo con Shift+click o botón medio.
+    // Click izquierdo en el fondo no hace nada — deja que el plano activo reciba el trazo.
+    const orbit = e.button === 2;
+    const pan = e.shiftKey || e.button === 1;
+    if (!orbit && !pan) return;
     const d3 = DZ.d3, sx = e.clientX, sy = e.clientY;
     const base = { rx: d3.rx, ry: d3.ry, px: d3.panX, py: d3.panY };
-    const pan = e.shiftKey || e.button === 1;
     stage.setPointerCapture(e.pointerId);
     const move = ev => {
       if (pan) { d3.panX = base.px + (ev.clientX - sx); d3.panY = base.py + (ev.clientY - sy); }
@@ -6781,6 +6785,7 @@ function dz3dBuild() {
     stage.addEventListener("pointerup", up);
     e.preventDefault();
   });
+  stage.addEventListener("contextmenu", e => e.preventDefault());
   stage.addEventListener("wheel", e => {
     e.preventDefault();
     DZ.d3.zoom = Math.max(0.12, Math.min(3, DZ.d3.zoom * (e.deltaY < 0 ? 1.1 : 0.9)));
