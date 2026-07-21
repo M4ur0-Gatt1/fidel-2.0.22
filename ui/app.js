@@ -2453,7 +2453,17 @@ function dzToUser(clientX, clientY) {
 }
 
 /* mousedown en el lienzo: selecciona el elemento y prepara arrastre para mover */
+/* paneles/UI flotante DENTRO de #dzCanvas: sus clics NO deben iniciar dibujo ni
+   selección (antes el lienzo hacía preventDefault y se comía los inputs → "los
+   valores del papel cebolla no cambian" + trazos fantasma) */
+const DZ_UI_SEL = ".dz-onionpanel,.dz-zpanel,.dz-xsheet,.dz-tlgrid,.dz-disc," +
+  ".dz-pendbg,.dz3d-gizmo,.dz3d-zbar,.dz3d-zhandle,.dz3d-rothandle,.dz-rulers," +
+  ".dz-selbox,.dz-cam,#dzCam";
+function dzOnUiPanel(e) {
+  return e.target && e.target.closest && e.target.closest(DZ_UI_SEL);
+}
 function dzPointerDown(e) {
+  if (dzOnUiPanel(e)) return;   // clic en un panel flotante: no seleccionar
   dzReleaseFocus();
   if (dzPanMaybe(e)) return;                           // espacio/botón medio: panear
   if (e.target.id === "dzHandle" || e.target.id === "dzRotate") return;   // tiradores propios
@@ -3388,6 +3398,7 @@ function dzDrawRaw(e) {
 }
 
 function dzDrawDown(e) {
+  if (dzOnUiPanel(e)) return;   // clic en un panel flotante: no dibujar
   dzReleaseFocus();
   const tool = DZ.tool || "select";
   if (DZ.spaceDown || e.button === 1 || tool === "hand") return;
@@ -4817,6 +4828,7 @@ async function dzAnimToggle() {
   if (!bar.hidden) {
     dzAnimStop(); bar.hidden = true; DZ.anim = null; dzOnionClear();
     $("#dzOnionPanel").hidden = true;
+    $("#dzTlGrid").hidden = true;   // el grid de capas vive con la timeline
     if (DZ.camMode) { DZ.camMode = false; $("#dzCamBtn").classList.remove("active"); $("#dzCam").hidden = true; $("#tlCamKey").hidden = true; }
     return;
   }
@@ -4834,6 +4846,12 @@ async function dzAnimToggle() {
   const sc = await api.scene_get(DZ.path);
   DZ.scene = (sc && sc.scene) || {};
   bar.hidden = false;
+  // capas DENTRO de la timeline (Toon Boom): el grid capa×cuadro se muestra de
+  // una, salvo que el usuario lo haya cerrado a propósito en esta sesión
+  if (DZ.tlGridClosed !== true) {
+    $("#dzTlGrid").hidden = false;
+    const b = $("#tlLayers"); if (b) b.classList.add("active");
+  }
   await dzTimelineRefresh();
   dzOnionUpdate();
   dzCamOverlay();
@@ -6393,6 +6411,7 @@ async function dzXsThumbInto(cell, f, i) {
 function dzTlGridToggle() {
   const g = $("#dzTlGrid");
   g.hidden = !g.hidden;
+  DZ.tlGridClosed = g.hidden;          // recordar la preferencia en la sesión
   const b = $("#tlLayers"); if (b) b.classList.toggle("active", !g.hidden);
   if (!g.hidden) { if (!DZ.anim) dzAnimToggle(); dzTlGridRender(); }
 }
