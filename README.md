@@ -1,65 +1,106 @@
-# LOW 
+# LOW 2.0 - Motor de Dibujo 3D Procedural
 
-**Editor de código con agente IA multi-proveedor.** Escribís una orden, el agente
-lee, escribe y ejecuta archivos de tu proyecto — y LOW verifica que el código
-generado compile antes de darlo por bueno. Pensado para comparar qué modelo
-escribe código más preciso, rápido y funcional.
+**Low Poly Observer Workshop** - Nueva generación de software de ilustración técnica 3D para Windows.
 
-- **Multi-proveedor**: Groq, NVIDIA NIM, OpenAI, Anthropic, DeepSeek, Qwen, GLM,
-  xAI y cualquier endpoint compatible OpenAI (Ollama, LM Studio). Una key por
-  proveedor; la lista de modelos se trae en vivo de cada API.
-- **Agente con herramientas**: crea y lee archivos, ejecuta comandos y corre el
-  código del editor. Los archivos generados se abren solos en el editor.
-- **Verificación del harness**: todo `.py` que escribe el agente se compila; si
-  tiene errores de sintaxis, LOW se los devuelve al modelo para que los
-  corrija antes de reportar "listo".
-- **Desafío de código (⚖)**: la misma consigna a varios modelos en paralelo;
-  LOW compila, ejecuta y compara la salida. Gana el código que funciona.
-- **Editor**: CodeMirror con temas claro/oscuro, terminal integrada, y las apps
-  con ventana (pygame, tkinter…) corren en proceso aparte. Los HTML se abren
-  directo en el navegador.
+## Visión
 
-## Descargar
+LOW 2.0 no es un clon de Feather. Es una reinterpretación optimizada para:
+- **Mouse** (precisión pixel-perfect)
+- **Tableta Wacom** (presión, inclinación)
+- **SpaceMouse** (navegación 6DOF)
+- **Windows 10/11** (nativo, sin capas de abstracción)
 
-En [Releases](../../releases) está la última versión:
+## Arquitectura
 
-| Sistema | Archivo |
-|---|---|
-| Windows 10/11 | `LOWSetup-x.y.z.exe` (instalador, no pide administrador) |
-| macOS | `LOW-macos.zip` (primera vez: clic derecho  Abrir, por Gatekeeper) |
-| Linux | `LOW-linux` (`chmod +x` y ejecutar) |
+Basada en **motores independientes** que se comunican mediante interfaces:
 
-## Correr desde el código
-
-```bash
-git clone <este-repo>
-cd low
-pip install -r requirements.txt
-# Linux además: pip install "pywebview[qt]"
-python main.py
+```
+┌─────────────┐     ┌──────────────┐     ┌─────────────┐
+│ Input Engine│────▶│ Surface Engine│────▶│Stroke Engine│
+└─────────────┘     └──────────────┘     └─────────────┘
+                           │                    │
+                           ▼                    ▼
+                    ┌──────────────┐     ┌─────────────┐
+                    │ Scene Engine │◀────│Render Engine│
+                    └──────────────┘     └─────────────┘
 ```
 
-Requisitos: Python 3.11+. En Windows usa WebView2 (ya viene en Windows 10/11);
-en macOS usa WebKit del sistema; en Linux, Qt WebEngine.
+### Principio Fundamental
 
-## Configurar
+> **El lápiz NUNCA calcula profundidad (Z).**  
+> Siempre dibuja SOBRE una superficie definida por contexto.
 
-Engranaje   pegá tus API keys. Para empezar gratis:
+Esto elimina el problema del "slider Z" y hace que el dibujo 3D sea tan intuitivo como el 2D.
 
-- **Groq** — [console.groq.com](https://console.groq.com) · recomendado:
-  `openai/gpt-oss-120b`
-- **NVIDIA NIM** — [build.nvidia.com](https://build.nvidia.com) · una sola key
-  habilita todo el catálogo (DeepSeek, Kimi, Nemotron, GLM…)
+## Stack Tecnológico
 
-Las keys se guardan localmente (`%APPDATA%\LOW` en Windows, `~/.config/LOW`
-en Linux, `~/Library/Application Support/LOW` en macOS) y nunca entran al repo.
+| Componente | Tecnología |
+|------------|-----------|
+| Lenguaje | C++20 |
+| Compilador | MSVC / GCC |
+| Gráficos | OpenGL 4.6 + GLAD |
+| Math | GLM (o implementación propia) |
+| UI | Dear ImGui |
+| Build | CMake 3.20+ |
 
-## Compilar
+## Estructura del Proyecto
 
-- **Windows**: `python build_exe.py` (PyInstaller + Inno Setup).
-- **Todos los sistemas**: al pushear un tag `vX.Y.Z`, GitHub Actions compila
-  Windows, macOS y Linux y sube los archivos al release automáticamente.
+```
+LOW/
+├── src/
+│   ├── Core/          # Tipos base, Logger, UUID
+│   ├── Math/          # Vec3, Mat4, Ray, AABB
+│   ├── Scene/         # SceneGraph, SceneObject
+│   ├── Surface/       # ISurface, SurfaceEngine
+│   ├── Stroke/        # StrokeEngine, Spline
+│   ├── Render/        # OpenGL, Shaders
+│   ├── Input/         # Mouse, Wacom, SpaceMouse
+│   └── App/           # Main loop
+├── include/Low/
+│   ├── Core/
+│   ├── Math/
+│   ├── Scene/
+│   ├── Surface/
+│   └── ...
+├── shaders/           # GLSL
+├── tests/             # Unit tests
+└── ARCHITECTURE.md    # Decisiones de diseño
+```
+
+## Estado Actual
+
+### ✅ Fase 1 Completada: Núcleo
+
+- [x] Sistema de build CMake
+- [x] Matemáticas básicas (Vec3, Mat4, Ray, AABB)
+- [x] Sistema de UUID y Logger
+- [x] SceneObject y Scene
+- [x] **Surface Engine completo** (ISurface, PlaneSurface, SphereSurface)
+
+### 🚧 Próximamente: Fase 2
+
+- [ ] Stroke Engine (Spline Catmull-Rom, Parallel Transport Frames)
+- [ ] Ribbon Builder (generación de geometría procedural)
+- [ ] Input Engine (mouse picking, ray casting desde cámara)
+- [ ] Render Engine (OpenGL 4.6, geometry shaders)
+
+## Compilación
+
+```bash
+mkdir build && cd build
+cmake ..
+cmake --build .
+```
+
+## Documentación
+
+- [ARCHITECTURE.md](ARCHITECTURE.md) - Decisiones de diseño (ADR)
+- Comentarios en código - Cada clase y método está documentado
 
 ## Licencia
 
-[MIT](LICENSE) — Mauro Gatti, Tropa Circa.
+En desarrollo. Todos los derechos reservados.
+
+---
+
+*"Programar motores, no herramientas."*

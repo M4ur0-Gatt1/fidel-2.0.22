@@ -1,20 +1,47 @@
-config.json
-__pycache__/
-dist/
+```
+# Build artifacts
 build/
-build_temp/
-*.zip
-*.backup
-.venv/
-*.mp4
+dist/
+*.o
+*.obj
+*.a
+*.lib
+*.so
+*.dll
+*.exe
 
-# salidas que LOW genera cuando se usa el propio repo como workspace
-disenos/
-video/
-assets/
-.fidel/
-.low/
-Output/
+# Dependencies
+node_modules/
+vendor/
 
-# caché de build temporal en C:\
-temp_low_build/
+# CMake
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+Makefile
+compile_commands.json
+
+# IDE/Editor
+.vscode/
+.idea/
+*.swp
+*.swo
+*.tmp
+
+# Logs
+*.log
+
+# Environment
+.env
+.env.local
+*.env.*
+
+# Coverage
+coverage/
+htmlcov/
+.coverage
+
+# OS
+.DS_Store
+Thumbs.db
+```
